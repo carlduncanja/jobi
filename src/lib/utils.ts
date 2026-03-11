@@ -129,3 +129,34 @@ export async function parseJsonBody<T>(request: Request): Promise<T> {
   const body = await request.json();
   return body as T;
 }
+
+export async function retryAsync<T>(
+  fn: () => Promise<T>,
+  options: { maxRetries?: number; baseDelayMs?: number; label?: string; logger?: { warn: (...args: any[]) => void } } = {},
+): Promise<T> {
+  const { maxRetries = 2, baseDelayMs = 2000, label = 'operation', logger } = options;
+
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      const isRetryable =
+        error instanceof Error &&
+        (error.message.includes('timed out') ||
+          error.message.includes('timeout') ||
+          error.message.includes('ECONNRESET') ||
+          error.message.includes('500') ||
+          error.message.includes('502') ||
+          error.message.includes('503') ||
+          error.message.includes('429'));
+
+      if (!isRetryable || attempt >= maxRetries) {
+        throw error;
+      }
+
+      const delay = baseDelayMs * Math.pow(2, attempt);
+      logger?.warn({ attempt: attempt + 1, maxRetries, delay, label }, `Retrying ${label} after transient error`);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+}

@@ -11,6 +11,7 @@ import { createSaveJobCandidatesTool } from '../tools/internal/save-job-candidat
 import { createSearchWebTool } from '../tools/internal/search-web';
 import type { AppContext } from '../lib/app-context';
 import type { JobSearchCompletion } from '../lib/types';
+import { retryAsync } from '../lib/utils';
 
 export async function runJobSearchLoop(
   app: AppContext,
@@ -54,10 +55,13 @@ export async function runJobSearchLoop(
   });
 
   try {
-    const result = await agent.generate({
-      abortSignal: AbortSignal.timeout(60_000),
-      prompt: input.prompt,
-    });
+    const result = await retryAsync(
+      () => agent.generate({
+        abortSignal: AbortSignal.timeout(120_000),
+        prompt: input.prompt,
+      }),
+      { maxRetries: 2, label: 'search-loop', logger: app.logger },
+    );
 
     return (
       runtime.completion ?? {

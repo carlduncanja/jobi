@@ -7,6 +7,7 @@ import { createSearchJobsTool } from '../tools/search-jobs';
 import { createSendMessageTool } from '../tools/send-message';
 import { createSubscribeNotificationsTool } from '../tools/subscribe-notifications';
 import { createUnsubscribeNotificationsTool } from '../tools/unsubscribe-notifications';
+import { retryAsync } from '../lib/utils';
 
 export interface MainAgentResponse {
   text: string;
@@ -39,20 +40,23 @@ export async function runMainAgent(
   request: MainAgentRequestContext,
 ): Promise<MainAgentResponse> {
   try {
-    const result = await generateText({
-      model: getMainAgentModel(app),
-      system: SYSTEM_PROMPT,
-      messages: buildMessages(request),
-      tools: {
-        searchJobs: createSearchJobsTool(app, request),
-        saveResume: createSaveResumeTool(app, request),
-        subscribeNotifications: createSubscribeNotificationsTool(app, request),
-        unsubscribeNotifications: createUnsubscribeNotificationsTool(app, request),
-        sendMessage: createSendMessageTool(app, request),
-      },
-      toolChoice: 'auto',
-      stopWhen: stepCountIs(6),
-    });
+    const result = await retryAsync(
+      () => generateText({
+        model: getMainAgentModel(app),
+        system: SYSTEM_PROMPT,
+        messages: buildMessages(request),
+        tools: {
+          searchJobs: createSearchJobsTool(app, request),
+          saveResume: createSaveResumeTool(app, request),
+          subscribeNotifications: createSubscribeNotificationsTool(app, request),
+          unsubscribeNotifications: createUnsubscribeNotificationsTool(app, request),
+          sendMessage: createSendMessageTool(app, request),
+        },
+        toolChoice: 'auto',
+        stopWhen: stepCountIs(6),
+      }),
+      { maxRetries: 2, label: 'main-agent', logger: app.logger },
+    );
 
     const sentText =
       request.sentMessages.at(-1)?.text ??
