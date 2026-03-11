@@ -1,5 +1,5 @@
 import { handleAgentApiRequest } from '../api/agent';
-import { handleIncomingWhatsAppMessage } from '../bot/router';
+import { enqueueMessage } from '../bot/router';
 import type { AppContext } from '../lib/app-context';
 import type { WhatsAppProvider } from '../domain/ports/whatsapp-provider';
 import { processDailyDigestWindow } from '../workflows/daily-digest';
@@ -34,16 +34,9 @@ export async function createJobBotServer(
 
   app.whatsappProvider = whatsappProvider;
 
-  const unsubscribe = whatsappProvider.subscribe(async (event) => {
+  const unsubscribe = whatsappProvider.subscribe((event) => {
     if (event.type === 'message') {
-      try {
-        await handleIncomingWhatsAppMessage(app, event.message);
-      } catch (error) {
-        app.logger.error(
-          { err: error, chatId: event.message.chatId, userId: event.message.userId },
-          'Failed to handle incoming WhatsApp message',
-        );
-      }
+      void enqueueMessage(app, event.message);
       return;
     }
 

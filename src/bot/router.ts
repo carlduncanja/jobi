@@ -4,7 +4,30 @@ import type { ChatHistoryMessage } from '../lib/app-context';
 import type { NormalizedIncomingMessage } from '../lib/types';
 import { runMainAgent } from '../ai/main-agent';
 
-export async function handleIncomingWhatsAppMessage(
+const chatQueues = new Map<string, Promise<void>>();
+
+export function enqueueMessage(app: AppContext, message: NormalizedIncomingMessage): void {
+  const chatId = message.chatId;
+  const previous = chatQueues.get(chatId) ?? Promise.resolve();
+
+  const next = previous
+    .then(() => handleIncomingWhatsAppMessage(app, message))
+    .catch((error) => {
+      app.logger.error(
+        { err: error, chatId: message.chatId, userId: message.userId },
+        'Failed to handle incoming WhatsApp message',
+      );
+    })
+    .finally(() => {
+      if (chatQueues.get(chatId) === next) {
+        chatQueues.delete(chatId);
+      }
+    });
+
+  chatQueues.set(chatId, next);
+}
+
+async function handleIncomingWhatsAppMessage(
   app: AppContext,
   message: NormalizedIncomingMessage,
 ): Promise<void> {

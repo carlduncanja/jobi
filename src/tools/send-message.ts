@@ -7,7 +7,7 @@ import type { AppContext, MainAgentRequestContext } from '../lib/app-context';
 export function createSendMessageTool(app: AppContext, request: MainAgentRequestContext) {
   return tool({
     description:
-      'Send a reply back to the current WhatsApp chat. This is the ONLY way to talk to the user. Call this exactly once as your final action.',
+      'Send a WhatsApp message to the user. This is the ONLY way to talk to the user. Call it as many times as you need — for quick acknowledgments, progress updates, chunked results, or follow-ups.',
     inputSchema: zodSchema(
       z.object({
         text: z.string().min(1),
@@ -19,10 +19,12 @@ export function createSendMessageTool(app: AppContext, request: MainAgentRequest
         return { delivered: false };
       }
 
+      const isFirstMessage = request.sentMessages.length === 0;
+
       const result = await app.whatsappProvider.sendText({
         chatId: request.chatId,
         text,
-        quotedMessageId: request.messageId,
+        quotedMessageId: isFirstMessage ? request.messageId : undefined,
       });
 
       app.logger.info(
