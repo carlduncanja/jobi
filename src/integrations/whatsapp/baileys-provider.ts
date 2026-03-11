@@ -1,3 +1,4 @@
+import qrcode from 'qrcode-terminal';
 import pino from 'pino';
 import makeWASocket, {
   BufferJSON,
@@ -119,7 +120,6 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
       auth: auth.state,
       version,
       browser: Browsers.macOS('Desktop'),
-      printQRInTerminal: false,
       logger: this.baileysLogger,
       markOnlineOnConnect: false,
       syncFullHistory: false,
@@ -168,6 +168,11 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
   private async handleConnectionUpdate(update: Partial<ConnectionState>): Promise<void> {
     const reason = getDisconnectReason(update.lastDisconnect?.error);
 
+    if (update.qr) {
+      this.app.logger.info('Scan this QR code with WhatsApp on your phone:');
+      qrcode.generate(update.qr, { small: true });
+    }
+
     this.status = {
       sessionId: this.sessionId,
       state: update.connection ?? this.status.state,
@@ -177,6 +182,7 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
     };
 
     if (update.connection === 'open') {
+      this.app.logger.info('WhatsApp connected successfully!');
       this.status.qr = undefined;
       this.status.lastDisconnectReason = undefined;
     }

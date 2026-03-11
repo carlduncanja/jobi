@@ -50,7 +50,7 @@ export async function runJobSearchLoop(
       rankJobs: createRankJobsTool(app, runtime),
       completeSearch: createCompleteSearchTool(runtime),
     },
-    stopWhen: stepCountIs(4),
+    stopWhen: stepCountIs(10),
   });
 
   const result = await agent.generate({

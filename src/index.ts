@@ -28,11 +28,9 @@ const app: AppContext = {
 };
 
 const whatsappProvider = new BaileysWhatsAppProvider(app, env.whatsapp.sessionId);
-const { server } = await createJobBotServer({
+await createJobBotServer({
   app,
   whatsappProvider,
   hostname: env.host,
   port: env.port,
 });
-
-export default server;
