@@ -3,9 +3,7 @@ import { ToolLoopAgent, stepCountIs } from 'ai';
 import { getSearchAgentModel } from './models';
 import type { SearchLoopRuntime } from './search-loop-runtime';
 import { createCompleteSearchTool } from '../tools/internal/complete-search';
-import { createFetchJobPageTool } from '../tools/internal/fetch-job-page';
 import { createGetSearchProfileTool } from '../tools/internal/get-search-profile';
-import { createNormalizeJobTool } from '../tools/internal/normalize-job';
 import { createRankJobsTool } from '../tools/internal/rank-jobs';
 import { createSaveJobCandidatesTool } from '../tools/internal/save-job-candidates';
 import { createSearchWebTool } from '../tools/internal/search-web';
@@ -33,31 +31,28 @@ export async function runJobSearchLoop(
   const agent = new ToolLoopAgent({
     model: getSearchAgentModel(app),
     instructions: [
-      'You are a hidden job-search agent that works behind the searchJobs tool.',
-      'Always load the search profile first.',
-      'Use searchWeb with 2-3 diverse parallel queries to cast a wide net — vary job titles, locations, and keywords.',
-      'You can call searchWeb multiple times if the first batch does not return enough results.',
-      'Normalize the strongest 3-5 results from the search hits.',
-      'Save all normalized jobs, then rank them against the user profile.',
-      'Call completeSearch exactly once when you have the final shortlist.',
-      'Aim for 5-10 quality job options in the final output.',
+      'You are a fast job-search agent.',
+      '1. Load the search profile.',
+      '2. searchWeb with 2-3 diverse queries.',
+      '3. From the results, extract title/company/location/summary and saveJobCandidates directly — do NOT fetch individual pages.',
+      '4. rankJobs against the profile.',
+      '5. completeSearch with the final shortlist.',
+      'Be fast. Skip unnecessary steps. Aim for 5-10 results.',
     ].join(' '),
     tools: {
       getSearchProfile: createGetSearchProfileTool(app, runtime),
       searchWeb: createSearchWebTool(app, runtime),
-      fetchJobPage: createFetchJobPageTool(),
-      normalizeJob: createNormalizeJobTool(app),
       saveJobCandidates: createSaveJobCandidatesTool(app, runtime),
       rankJobs: createRankJobsTool(app, runtime),
       completeSearch: createCompleteSearchTool(runtime),
     },
-    stopWhen: stepCountIs(10),
+    stopWhen: stepCountIs(8),
   });
 
   try {
     const result = await retryAsync(
       () => agent.generate({
-        abortSignal: AbortSignal.timeout(120_000),
+        abortSignal: AbortSignal.timeout(90_000),
         prompt: input.prompt,
       }),
       { maxRetries: 2, label: 'search-loop', logger: app.logger },

@@ -9,7 +9,7 @@ import { canonicalizeUrl, isoNow, sha256Text } from '../../lib/utils';
 
 export function createSaveJobCandidatesTool(app: AppContext, runtime: SearchLoopRuntime) {
   return tool({
-    description: 'Persist normalized job candidates and deduplicate them by canonical job URL.',
+    description: 'Save job candidates from search results. Pass the raw search hits — title, url, company, location, and a short summary extracted from highlights or snippets.',
     inputSchema: zodSchema(
       z.object({
         jobs: z.array(
@@ -19,10 +19,8 @@ export function createSaveJobCandidatesTool(app: AppContext, runtime: SearchLoop
             company: z.string().default('Unknown'),
             location: z.string().default('Unknown'),
             remoteType: z.string().optional(),
-            employmentType: z.string().optional(),
             salary: z.string().optional(),
             summary: z.string(),
-            description: z.string().optional(),
             source: z.string().default('web'),
             publishedAt: z.string().optional(),
             tags: z.array(z.string()).default([]),
@@ -36,24 +34,24 @@ export function createSaveJobCandidatesTool(app: AppContext, runtime: SearchLoop
       for (const job of jobs) {
         const canonicalUrl = canonicalizeUrl(job.url);
         const existing = await findJobPostingByUrl(app.db, canonicalUrl);
-        const normalized: JobPosting = {
+        const posting: JobPosting = {
           id: existing?.id ?? sha256Text(canonicalUrl),
           canonicalUrl,
           title: job.title,
           company: job.company,
           location: job.location,
           remoteType: job.remoteType,
-          employmentType: job.employmentType,
+          employmentType: undefined,
           salary: job.salary,
           summary: job.summary,
-          description: job.description,
+          description: undefined,
           source: job.source,
           publishedAt: job.publishedAt,
           tags: job.tags,
           updatedAt: isoNow(),
         };
 
-        const persisted = await saveJobPosting(app.db, normalized);
+        const persisted = await saveJobPosting(app.db, posting);
         saved.push(persisted);
       }
 
@@ -68,10 +66,8 @@ export function createSaveJobCandidatesTool(app: AppContext, runtime: SearchLoop
 
 function dedupeJobs(jobs: JobPosting[]): JobPosting[] {
   const map = new Map<string, JobPosting>();
-
   for (const job of jobs) {
     map.set(job.id, job);
   }
-
   return [...map.values()];
 }

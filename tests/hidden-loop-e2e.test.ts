@@ -6,9 +6,7 @@ import type { SearchLoopRuntime } from '../src/ai/search-loop-runtime';
 import { saveSearchProfile } from '../src/db/store';
 import type { SearchProvider } from '../src/domain/ports/search-provider';
 import { createCompleteSearchTool } from '../src/tools/internal/complete-search';
-import { createFetchJobPageTool } from '../src/tools/internal/fetch-job-page';
 import { createGetSearchProfileTool } from '../src/tools/internal/get-search-profile';
-import { createNormalizeJobTool } from '../src/tools/internal/normalize-job';
 import { createRankJobsTool } from '../src/tools/internal/rank-jobs';
 import { createSaveJobCandidatesTool } from '../src/tools/internal/save-job-candidates';
 import { createSearchWebTool } from '../src/tools/internal/search-web';
@@ -36,7 +34,7 @@ describe('hidden tool loop integration', () => {
   });
 
   it(
-    'runs the hidden ToolLoopAgent path directly without fallback',
+    'runs the hidden ToolLoopAgent path directly',
     async () => {
       await saveSearchProfile(harness.db, {
         userId: 'loop-user',
@@ -51,7 +49,6 @@ describe('hidden tool loop integration', () => {
       });
 
       const originalSearchProvider = harness.app.searchProvider;
-      const originalFetch = globalThis.fetch;
 
       const fakeSearchProvider: SearchProvider = {
         async search() {
@@ -72,40 +69,6 @@ describe('hidden tool loop integration', () => {
       };
 
       harness.app.searchProvider = fakeSearchProvider;
-      globalThis.fetch = (async (
-        input: Parameters<typeof fetch>[0],
-        init?: Parameters<typeof fetch>[1],
-      ) => {
-        const url =
-          typeof input === 'string'
-            ? input
-            : input instanceof URL
-              ? input.toString()
-              : input.url;
-
-        if (url === 'https://jobs.example.test/backend-engineer') {
-          return new Response(
-            `
-            <html>
-              <head><title>Senior Backend Engineer at Example Labs</title></head>
-              <body>
-                Remote backend engineer role.
-                Skills: TypeScript, Bun, APIs, SurrealDB.
-                Employment type: Full-time.
-              </body>
-            </html>
-            `,
-            {
-              status: 200,
-              headers: {
-                'content-type': 'text/html',
-              },
-            },
-          );
-        }
-
-        return originalFetch(input as any, init);
-      }) as typeof fetch;
 
       try {
         const runtime: SearchLoopRuntime = {
@@ -121,12 +84,10 @@ describe('hidden tool loop integration', () => {
         const agent = new ToolLoopAgent({
           model: getSearchAgentModel(harness.app),
           instructions:
-            'You are the hidden job-search loop. Follow the tool sequence, use the available results, and produce one strong shortlist.',
+            'You are the hidden job-search loop. Load profile, search, save candidates, rank, then completeSearch.',
           tools: {
             getSearchProfile: createGetSearchProfileTool(harness.app, runtime),
             searchWeb: createSearchWebTool(harness.app, runtime),
-            fetchJobPage: createFetchJobPageTool(),
-            normalizeJob: createNormalizeJobTool(harness.app),
             saveJobCandidates: createSaveJobCandidatesTool(harness.app, runtime),
             rankJobs: createRankJobsTool(harness.app, runtime),
             completeSearch: createCompleteSearchTool(runtime),
@@ -148,19 +109,12 @@ describe('hidden tool loop integration', () => {
 
             if (stepNumber === 2) {
               return {
-                activeTools: ['normalizeJob'],
-                toolChoice: { type: 'tool', toolName: 'normalizeJob' },
-              };
-            }
-
-            if (stepNumber === 3) {
-              return {
                 activeTools: ['saveJobCandidates'],
                 toolChoice: { type: 'tool', toolName: 'saveJobCandidates' },
               };
             }
 
-            if (stepNumber === 4) {
+            if (stepNumber === 3) {
               return {
                 activeTools: ['rankJobs'],
                 toolChoice: { type: 'tool', toolName: 'rankJobs' },
@@ -172,7 +126,7 @@ describe('hidden tool loop integration', () => {
               toolChoice: { type: 'tool', toolName: 'completeSearch' },
             };
           },
-          stopWhen: stepCountIs(6),
+          stopWhen: stepCountIs(5),
         });
 
         await agent.generate({
@@ -206,9 +160,8 @@ describe('hidden tool loop integration', () => {
         ).toBe(true);
       } finally {
         harness.app.searchProvider = originalSearchProvider;
-        globalThis.fetch = originalFetch;
       }
     },
-    180_000,
+    120_000,
   );
 });
