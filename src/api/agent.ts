@@ -1,6 +1,6 @@
-import { ensureUser, saveMessage } from '../db/store';
+import { ensureUser, listRecentMessages, saveMessage } from '../db/store';
 import { mainAgentRequestSchema } from '../lib/schemas';
-import type { AppContext } from '../lib/app-context';
+import type { AppContext, ChatHistoryMessage } from '../lib/app-context';
 import { normalizeIncomingAttachments, parseJsonBody } from '../lib/utils';
 import { runMainAgent } from '../ai/main-agent';
 
@@ -23,6 +23,14 @@ export async function handleAgentApiRequest(app: AppContext, request: Request): 
       attachmentIds: attachments.map((attachment) => attachment.id),
     });
 
+    const recentMessages = await listRecentMessages(app.db, parsed.chatId, 20);
+    const history: ChatHistoryMessage[] = recentMessages
+      .filter((m) => m.text.trim().length > 0)
+      .map((m) => ({
+        role: m.direction === 'inbound' ? 'user' as const : 'assistant' as const,
+        content: m.text,
+      }));
+
     const result = await runMainAgent(app, {
       sessionId: parsed.sessionId,
       userId: parsed.userId,
@@ -32,10 +40,12 @@ export async function handleAgentApiRequest(app: AppContext, request: Request): 
       attachments,
       allowSending: parsed.allowSending ?? false,
       sentMessages: [],
+      history,
     });
 
     return Response.json(result);
   } catch (error) {
+    app.logger.error({ err: error }, 'Agent API request failed');
     return Response.json(
       {
         error: error instanceof Error ? error.message : 'Unknown error',

@@ -36,7 +36,14 @@ export async function createJobBotServer(
 
   const unsubscribe = whatsappProvider.subscribe(async (event) => {
     if (event.type === 'message') {
-      await handleIncomingWhatsAppMessage(app, event.message);
+      try {
+        await handleIncomingWhatsAppMessage(app, event.message);
+      } catch (error) {
+        app.logger.error(
+          { err: error, chatId: event.message.chatId, userId: event.message.userId },
+          'Failed to handle incoming WhatsApp message',
+        );
+      }
       return;
     }
 
@@ -51,14 +58,14 @@ export async function createJobBotServer(
     enableScheduler
       ? setInterval(() => {
           void processDailyDigestWindow(app).catch((error) => {
-            app.logger.error({ error }, 'Daily digest scheduler tick failed');
+            app.logger.error({ err: error }, 'Daily digest scheduler tick failed');
           });
         }, schedulerIntervalMs)
       : undefined;
 
   if (enableScheduler) {
     void processDailyDigestWindow(app).catch((error) => {
-      app.logger.error({ error }, 'Initial daily digest scheduler tick failed');
+      app.logger.error({ err: error }, 'Initial daily digest scheduler tick failed');
     });
   }
 
@@ -103,7 +110,7 @@ export async function createJobBotServer(
         { status: 404 },
       ),
     error(error) {
-      app.logger.error({ error }, 'Unhandled HTTP error');
+      app.logger.error({ err: error }, 'Unhandled HTTP error');
       return Response.json(
         {
           error: 'Internal server error',

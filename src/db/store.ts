@@ -54,8 +54,11 @@ type StoredMessage = {
   createdAt: string;
 };
 
-function asRecordId(table: string, id: string) {
-  return recordId(table, id) as any;
+// SurrealDB SDK types don't align with our domain types — RecordId, .content(), and
+// .merge() all require `any` casts because the SDK uses internal branded types.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function asRecordId(table: string, id: string): any {
+  return recordId(table, id);
 }
 
 function normalizeId(id: unknown, table: string): string {
@@ -125,6 +128,28 @@ export async function saveMessage(
 
   await db.create<StoredMessage>(asRecordId('messages', id)).content(next as any);
   return next;
+}
+
+export async function listRecentMessages(
+  db: Database,
+  chatId: string,
+  limit = 20,
+): Promise<StoredMessage[]> {
+  const [rows] = await db
+    .query<[StoredMessage[]]>(
+      `
+      SELECT * FROM messages
+      WHERE chatId = $chatId
+      ORDER BY createdAt DESC
+      LIMIT $limit
+      `,
+      { chatId, limit },
+    )
+    .collect();
+
+  return (rows ?? [])
+    .map((row) => normalizeRecord(row, 'messages') as StoredMessage)
+    .reverse();
 }
 
 export async function saveAttachmentRecord(

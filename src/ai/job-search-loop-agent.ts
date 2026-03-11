@@ -53,16 +53,24 @@ export async function runJobSearchLoop(
     stopWhen: stepCountIs(10),
   });
 
-  const result = await agent.generate({
-    abortSignal: AbortSignal.timeout(60_000),
-    prompt: input.prompt,
-  });
+  try {
+    const result = await agent.generate({
+      abortSignal: AbortSignal.timeout(60_000),
+      prompt: input.prompt,
+    });
 
-  return (
-    runtime.completion ?? {
-      summary: result.text || 'No matching jobs were found.',
-      queries: runtime.queries,
-      jobs: runtime.rankedJobs,
-    }
-  );
+    return (
+      runtime.completion ?? {
+        summary: result.text || 'No matching jobs were found.',
+        queries: runtime.queries,
+        jobs: runtime.rankedJobs,
+      }
+    );
+  } catch (error) {
+    app.logger.error(
+      { err: error, userId: input.userId, chatId: input.chatId },
+      'Job search loop agent failed',
+    );
+    throw error;
+  }
 }

@@ -36,14 +36,6 @@ export const normalizedJobSchema = z.object({
   tags: z.array(z.string()),
 });
 
-export const rankedJobSchema = z.object({
-  jobId: z.string(),
-  score: z.number().min(0).max(1),
-  reasons: z.array(z.string()).default([]),
-  matchedSkills: z.array(z.string()).default([]),
-  missingSkills: z.array(z.string()).default([]),
-});
-
 export const mainAgentRequestSchema = z.object({
   sessionId: z.string(),
   chatId: z.string(),
@@ -66,7 +58,3 @@ export const mainAgentRequestSchema = z.object({
   allowSending: z.boolean().optional(),
 });
 
-export type ResumeProfileExtraction = z.infer<typeof resumeProfileSchema>;
-export type SearchProfileExtraction = z.infer<typeof searchProfileSchema>;
-export type NormalizedJobExtraction = z.infer<typeof normalizedJobSchema>;
-export type RankedJobExtraction = z.infer<typeof rankedJobSchema>;

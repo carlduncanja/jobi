@@ -114,7 +114,7 @@ export async function processDailyDigestWindow(
         status: 'failed',
         error: error instanceof Error ? error.message : 'Unknown delivery error',
       });
-      app.logger.error({ error }, 'Failed daily digest delivery');
+      app.logger.error({ err: error, deliveryId: delivery.id, userId: delivery.userId }, 'Failed daily digest delivery');
     }
   }
 }

@@ -13,6 +13,11 @@ export interface AppContext {
   whatsappProvider: WhatsAppProvider | null;
 }
 
+export interface ChatHistoryMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 export interface MainAgentRequestContext {
   sessionId: string;
   userId: string;
@@ -25,4 +30,5 @@ export interface MainAgentRequestContext {
     text: string;
     providerMessageId?: string;
   }>;
+  history: ChatHistoryMessage[];
 }

@@ -25,6 +25,11 @@ export function createSendMessageTool(app: AppContext, request: MainAgentRequest
         quotedMessageId: request.messageId,
       });
 
+      app.logger.info(
+        { userId: request.userId, chatId: request.chatId, textLength: text.length },
+        'Outgoing WhatsApp message sent',
+      );
+
       await saveMessage(app.db, {
         userId: request.userId,
         chatId: request.chatId,

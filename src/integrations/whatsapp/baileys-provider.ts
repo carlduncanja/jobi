@@ -1,4 +1,4 @@
-import qrcode from 'qrcode-terminal';
+import * as qrcode from 'qrcode-terminal';
 import pino from 'pino';
 import makeWASocket, {
   BufferJSON,
@@ -75,9 +75,13 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
       throw new Error('WhatsApp socket is not connected');
     }
 
-    const sent = await this.socket.sendMessage(message.chatId, {
-      text: message.text,
-    });
+    const sent = await this.socket.sendMessage(
+      message.chatId,
+      { text: message.text },
+      message.quotedMessageId
+        ? { quoted: { key: { remoteJid: message.chatId, id: message.quotedMessageId }, message: {} } as any }
+        : undefined,
+    );
 
     return {
       delivered: true,

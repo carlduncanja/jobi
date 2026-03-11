@@ -16,7 +16,7 @@ export function createFetchJobPageTool() {
       const response = await fetch(url, {
         signal: AbortSignal.timeout(15_000),
         headers: {
-          'user-agent': 'JobBot/0.1 (+https://example.invalid)',
+          'user-agent': 'JobBot/1.0',
         },
       });
 
