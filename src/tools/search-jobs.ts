@@ -65,34 +65,40 @@ async function runSearchJobsWithFallback(
     ]);
   } catch (error) {
     void loopPromise.catch(() => undefined);
-    app.logger.warn({ error }, 'Hidden search loop failed, using deterministic fallback');
-    return await runDeterministicSearchFallback(app, input.userId, input.prompt);
+    app.logger.warn({ error }, 'Hidden search loop failed, using raw search fallback');
+    return await runRawSearchFallback(app, input.userId, input.prompt);
   }
 }
 
-async function runDeterministicSearchFallback(
+async function runRawSearchFallback(
   app: AppContext,
   userId: string,
   prompt: string,
 ): Promise<JobSearchCompletion> {
-  const profile =
-    (await getSearchProfile(app.db, userId)) ??
-    ({
-      userId,
-      summary: prompt,
-      targetTitles: [],
-      relatedTitles: [],
-      skills: [],
-      preferredLocations: [],
-      excludedKeywords: [],
-      updatedAt: isoNow(),
-    } satisfies SearchProfile);
+  const profile = await getSearchProfile(app.db, userId);
 
-  const query = buildFallbackQuery(profile, prompt);
-  const results = await app.searchProvider.search({
-    query,
-    numResults: 4,
-  });
+  const query = profile
+    ? [
+        profile.targetTitles[0],
+        profile.skills.slice(0, 3).join(' '),
+        profile.preferredLocations[0] ?? 'remote',
+        'jobs',
+      ]
+        .filter(Boolean)
+        .join(' ')
+    : `${prompt} jobs`;
+
+  const results = await app.searchProvider.search({ query, numResults: 4 });
+  const rankingProfile: SearchProfile = profile ?? {
+    userId,
+    summary: prompt,
+    targetTitles: [],
+    relatedTitles: [],
+    skills: [],
+    preferredLocations: [],
+    excludedKeywords: [],
+    updatedAt: isoNow(),
+  };
 
   const rankedJobs = [];
 
@@ -102,21 +108,22 @@ async function runDeterministicSearchFallback(
     const posting: JobPosting = {
       id: existing?.id ?? sha256Text(canonicalUrl),
       canonicalUrl,
-      title: extractJobTitle(result.title),
-      company: extractCompanyName(result.title),
-      location: extractLocation(result.text, result.highlights?.map((item) => item.text).join(' ')),
-      summary: truncate(result.highlights?.map((item) => item.text).join(' ') || result.text || result.title, 500),
+      title: result.title,
+      company: 'Unknown',
+      location: 'Unknown',
+      summary: truncate(
+        result.highlights?.map((h) => h.text).join(' ') || result.text || result.title,
+        500,
+      ),
       description: result.text,
       source: 'exa-fallback',
       publishedAt: result.publishedAt,
-      tags: profile.skills.filter((skill) =>
-        `${result.title} ${result.text ?? ''}`.toLowerCase().includes(skill.toLowerCase()),
-      ),
+      tags: [],
       updatedAt: isoNow(),
     };
 
     const savedPosting = await saveJobPosting(app.db, posting);
-    const ranked = rankJobAgainstProfile(profile, savedPosting);
+    const ranked = rankJobAgainstProfile(rankingProfile, savedPosting);
 
     await saveJobMatch(app.db, {
       id: `${userId}-${savedPosting.id}`,
@@ -134,78 +141,14 @@ async function runDeterministicSearchFallback(
     rankedJobs.push(ranked);
   }
 
-  rankedJobs.sort((left, right) => right.score - left.score);
+  rankedJobs.sort((a, b) => b.score - a.score);
 
   return {
     summary:
       rankedJobs.length > 0
-        ? `Found ${rankedJobs.length} relevant jobs using the fallback search pipeline.`
+        ? `Found ${rankedJobs.length} jobs from a direct search.`
         : 'No matching jobs were found.',
     queries: [query],
     jobs: rankedJobs,
   };
-}
-
-function buildFallbackQuery(profile: SearchProfile, prompt: string): string {
-  const title =
-    profile.targetTitles[0] ??
-    profile.relatedTitles[0] ??
-    extractPromptTitle(prompt) ??
-    'software engineer';
-  const skills = profile.skills.slice(0, 3).join(' ');
-  const location = profile.preferredLocations[0] ?? 'remote';
-
-  return `${title} ${skills} ${location} jobs`;
-}
-
-function extractPromptTitle(prompt: string): string | undefined {
-  const lower = prompt.toLowerCase();
-
-  if (lower.includes('backend')) {
-    return 'backend engineer';
-  }
-
-  if (lower.includes('full stack') || lower.includes('fullstack')) {
-    return 'full stack engineer';
-  }
-
-  if (lower.includes('frontend')) {
-    return 'frontend engineer';
-  }
-
-  return undefined;
-}
-
-function extractJobTitle(title: string): string {
-  return title.split(' at ')[0]?.split(' - ')[0]?.trim() || title;
-}
-
-function extractCompanyName(title: string): string {
-  if (title.includes(' at ')) {
-    return title.split(' at ')[1]?.trim() || 'Unknown';
-  }
-
-  if (title.includes(' - ')) {
-    return title.split(' - ')[1]?.trim() || 'Unknown';
-  }
-
-  return 'Unknown';
-}
-
-function extractLocation(text?: string, highlightText?: string): string {
-  const combined = `${text ?? ''} ${highlightText ?? ''}`.toLowerCase();
-
-  if (combined.includes('remote')) {
-    return 'Remote';
-  }
-
-  if (combined.includes('jamaica')) {
-    return 'Jamaica';
-  }
-
-  if (combined.includes('united states') || combined.includes('usa')) {
-    return 'United States';
-  }
-
-  return 'Unknown';
 }
