@@ -35,12 +35,12 @@ export async function runJobSearchLoop(
     instructions: [
       'You are a hidden job-search agent that works behind the searchJobs tool.',
       'Always load the search profile first.',
-      'Use 1-2 focused web queries to find relevant software and technology jobs.',
-      'Fetch and normalize only the strongest 1-2 results before saving them.',
-      'Prefer speed and decisiveness over broad exploration.',
-      'Rank the saved jobs against the user profile.',
+      'Use searchWeb with 2-3 diverse parallel queries to cast a wide net — vary job titles, locations, and keywords.',
+      'You can call searchWeb multiple times if the first batch does not return enough results.',
+      'Normalize the strongest 3-5 results from the search hits.',
+      'Save all normalized jobs, then rank them against the user profile.',
       'Call completeSearch exactly once when you have the final shortlist.',
-      'Keep the final shortlist concise and high quality.',
+      'Aim for 5-10 quality job options in the final output.',
     ].join(' '),
     tools: {
       getSearchProfile: createGetSearchProfileTool(app, runtime),
