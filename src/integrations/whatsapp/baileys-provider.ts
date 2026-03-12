@@ -19,7 +19,7 @@ import makeWASocket, {
   type WASocket,
 } from '@whiskeysockets/baileys';
 
-import { getSessionRecord, saveSessionAuthState, saveSessionStatus } from '../../db/store';
+import { clearSessionAuthState, getSessionRecord, saveSessionAuthState, saveSessionStatus } from '../../db/store';
 import type { WhatsAppProvider } from '../../domain/ports/whatsapp-provider';
 import type { AppContext } from '../../lib/app-context';
 import type {
@@ -241,8 +241,14 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
       session: this.status,
     });
 
-    if (update.connection === 'close' && !this.stopped && reason !== 'logged_out') {
-      this.app.logger.warn({ reason }, 'WhatsApp connection closed, reconnecting');
+    if (update.connection === 'close' && !this.stopped) {
+      if (reason === 'logged_out') {
+        this.app.logger.warn('WhatsApp logged out, clearing auth state and reconnecting fresh');
+        await clearSessionAuthState(this.app.db, this.sessionId);
+        this.pairingCodeRequested = false;
+      } else {
+        this.app.logger.warn({ reason }, 'WhatsApp connection closed, reconnecting');
+      }
       setTimeout(() => {
         void this.connect();
       }, 3_000);

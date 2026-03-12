@@ -476,3 +476,10 @@ export async function saveSessionStatus(
   await db.upsert<StoredSession>(asRecordId('wa_sessions', sessionId)).merge(next as any);
   return next;
 }
+
+export async function clearSessionAuthState(
+  db: Database,
+  sessionId: string,
+): Promise<void> {
+  await db.delete(asRecordId('wa_sessions', sessionId));
+}
