@@ -39,6 +39,10 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
   private status: WhatsAppSessionStatus;
   private stopped = false;
   private pairingCodeRequested = false;
+  private pendingSyncMessages: WAMessage[] = [];
+  private pendingSyncChats: Array<{ id: string; unreadCount?: number }> = [];
+  private syncDone = false;
+  private processedMessageIds = new Set<string>();
 
   constructor(private readonly app: AppContext, private readonly sessionId: string) {
     this.status = {
@@ -126,7 +130,8 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
       browser: Browsers.macOS('Desktop'),
       logger: this.baileysLogger,
       markOnlineOnConnect: false,
-      syncFullHistory: false,
+      syncFullHistory: true,
+      shouldSyncHistoryMessage: () => true,
     });
 
     this.socket.ev.on('creds.update', async () => {
@@ -137,12 +142,47 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
       await this.handleConnectionUpdate(update);
     });
 
+    this.socket.ev.on('messaging-history.set', ({ messages }) => {
+      if (!this.syncDone) {
+        this.pendingSyncMessages.push(...messages);
+      }
+    });
+
+    this.socket.ev.on('chats.upsert', (chats) => {
+      if (!this.syncDone) {
+        for (const chat of chats) {
+          this.pendingSyncChats.push({
+            id: chat.id ?? '',
+            unreadCount: chat.unreadCount ?? undefined,
+          });
+          const historyMsgs = (chat as any).messages as Array<{ message?: WAMessage }> | undefined;
+          if (historyMsgs) {
+            for (const hMsg of historyMsgs) {
+              if (hMsg.message) {
+                this.pendingSyncMessages.push(hMsg.message);
+              }
+            }
+          }
+        }
+      }
+    });
+
     this.socket.ev.on('messages.upsert', async ({ messages, type }) => {
+      if (!this.syncDone && type === 'append') {
+        this.pendingSyncMessages.push(...messages);
+        return;
+      }
+
       if (type !== 'notify') {
         return;
       }
 
       for (const message of messages) {
+        if (this.processedMessageIds.has(message.key.id ?? '')) {
+          continue;
+        }
+        this.trackMessageId(message.key.id ?? '');
+
         const normalized = await this.normalizeMessage(message);
 
         if (!normalized) {
@@ -189,6 +229,10 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
       this.app.logger.info('WhatsApp connected successfully!');
       this.status.qr = undefined;
       this.status.lastDisconnectReason = undefined;
+
+      setTimeout(() => {
+        void this.processUnrepliedMessages();
+      }, 15_000);
     }
 
     await saveSessionStatus(this.app.db, this.sessionId, this.status);
@@ -205,12 +249,105 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
     }
   }
 
+  private trackMessageId(id: string): void {
+    this.processedMessageIds.add(id);
+    if (this.processedMessageIds.size > 5000) {
+      const first = this.processedMessageIds.values().next().value;
+      if (first) this.processedMessageIds.delete(first);
+    }
+  }
+
+  private getOwnJid(): string | undefined {
+    return this.socket?.user?.id;
+  }
+
+  private isOwnChat(jid: string): boolean {
+    const ownJid = this.getOwnJid();
+    if (!ownJid) return false;
+    const ownNumber = ownJid.split('@')[0].split(':')[0];
+    const chatNumber = jid.split('@')[0].split(':')[0];
+    return ownNumber === chatNumber;
+  }
+
+  private async processUnrepliedMessages(): Promise<void> {
+    this.syncDone = true;
+    const synced = this.pendingSyncMessages;
+    const syncedChats = this.pendingSyncChats;
+    this.pendingSyncMessages = [];
+    this.pendingSyncChats = [];
+
+    this.app.logger.info(
+      { messageCount: synced.length, chatCount: syncedChats.length },
+      'Catchup: collected sync data',
+    );
+
+    const chatMessages = new Map<string, WAMessage[]>();
+    for (const msg of synced) {
+      const jid = msg.key.remoteJid;
+      if (!jid || jid === 'status@broadcast') continue;
+      if (this.isOwnChat(jid)) continue;
+      const list = chatMessages.get(jid) ?? [];
+      list.push(msg);
+      chatMessages.set(jid, list);
+    }
+
+    const unreadChatIds = new Set<string>();
+    for (const chat of syncedChats) {
+      if (!chat.id || chat.id === 'status@broadcast') continue;
+      if (this.isOwnChat(chat.id)) continue;
+      if (chat.unreadCount && chat.unreadCount > 0) {
+        unreadChatIds.add(chat.id);
+      }
+    }
+
+    let catchupCount = 0;
+
+    for (const [chatId, messages] of chatMessages) {
+      messages.sort((a, b) => {
+        const tsA = Number(a.messageTimestamp ?? 0);
+        const tsB = Number(b.messageTimestamp ?? 0);
+        return tsA - tsB;
+      });
+
+      const lastMsg = messages[messages.length - 1];
+      if (!lastMsg || lastMsg.key.fromMe) continue;
+
+      if (this.processedMessageIds.has(lastMsg.key.id ?? '')) continue;
+      this.trackMessageId(lastMsg.key.id ?? '');
+
+      const normalized = await this.normalizeMessage(lastMsg);
+      if (!normalized) continue;
+
+      this.app.logger.info(
+        { chatId, text: normalized.text, userId: normalized.userId },
+        'Catching up on unreplied message',
+      );
+
+      await this.emit({ type: 'message', message: normalized });
+      unreadChatIds.delete(chatId);
+      catchupCount++;
+    }
+
+    if (unreadChatIds.size > 0) {
+      this.app.logger.info(
+        { chats: [...unreadChatIds] },
+        'Chats with unread messages but no synced message content (will reply on next message)',
+      );
+    }
+
+    this.app.logger.info({ catchupCount }, 'Catchup complete');
+  }
+
   private async normalizeMessage(message: WAMessage): Promise<NormalizedIncomingMessage | null> {
     if (message.key.fromMe || !message.key.remoteJid || !message.message) {
       return null;
     }
 
     if (message.key.remoteJid === 'status@broadcast') {
+      return null;
+    }
+
+    if (this.isOwnChat(message.key.remoteJid)) {
       return null;
     }
 
@@ -222,7 +359,8 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
 
     const text = extractTextFromMessage(content);
     const attachments = await this.extractAttachments(message, content);
-    const userId = (message.key.participant ?? message.key.remoteJid).split('@')[0];
+    const rawUserId = (message.key.participant ?? message.key.remoteJid).split('@')[0];
+    const userId = rawUserId || message.key.remoteJid.split('@')[0];
     const timestampSeconds = Number(message.messageTimestamp ?? Math.floor(Date.now() / 1000));
 
     return {
@@ -246,7 +384,8 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
 
     const contentType = getContentType(content);
 
-    if (contentType !== 'imageMessage' && contentType !== 'documentMessage') {
+    const supported = ['imageMessage', 'documentMessage', 'audioMessage'];
+    if (!contentType || !supported.includes(contentType)) {
       return [];
     }
 
@@ -286,6 +425,21 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
           ),
           bytes: Uint8Array.from(buffer),
           caption: content.documentMessage.caption ?? undefined,
+          source: 'whatsapp',
+        },
+      ];
+    }
+
+    if (contentType === 'audioMessage' && content.audioMessage) {
+      const mime = content.audioMessage.mimetype ?? 'audio/ogg; codecs=opus';
+      const ext = mime.includes('ogg') ? 'ogg' : 'mp4';
+      return [
+        {
+          id: `wa-${message.key.id}-audio`,
+          filename: `${message.key.id}.${ext}`,
+          mimeType: mime,
+          kind: 'audio',
+          bytes: Uint8Array.from(buffer),
           source: 'whatsapp',
         },
       ];

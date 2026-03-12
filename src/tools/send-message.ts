@@ -32,13 +32,17 @@ export function createSendMessageTool(app: AppContext, request: MainAgentRequest
         'Outgoing WhatsApp message sent',
       );
 
-      await saveMessage(app.db, {
-        userId: request.userId,
-        chatId: request.chatId,
-        direction: 'outbound',
-        text,
-        attachmentIds: [],
-      });
+      try {
+        await saveMessage(app.db, {
+          userId: request.userId,
+          chatId: request.chatId,
+          direction: 'outbound',
+          text,
+          attachmentIds: [],
+        });
+      } catch (err) {
+        app.logger.error({ err }, 'Failed to persist outbound message to DB');
+      }
 
       request.sentMessages.push({
         text,

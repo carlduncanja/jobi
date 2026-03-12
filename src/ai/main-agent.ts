@@ -6,6 +6,7 @@ import { createSaveResumeTool } from '../tools/save-resume';
 import { createSearchJobsTool } from '../tools/search-jobs';
 import { createSendMessageTool } from '../tools/send-message';
 import { createSubscribeNotificationsTool } from '../tools/subscribe-notifications';
+import { createTranscribeAudioTool } from '../tools/transcribe-audio';
 import { createUnsubscribeNotificationsTool } from '../tools/unsubscribe-notifications';
 import { retryAsync } from '../lib/utils';
 
@@ -27,6 +28,7 @@ HOW YOU COMMUNICATE:
 YOUR TOOLS:
 - searchJobs: Search for job listings. Use when the user asks about jobs, openings, or work.
 - saveResume: Save or update the user's resume from attached files (PDF, DOCX, images, or text).
+- transcribeAudio: Transcribe a voice message to text. ALWAYS call this FIRST when the user sends a voice note or audio attachment, before doing anything else. Pass the attachment filename.
 - subscribeNotifications: Subscribe to daily job digests.
 - unsubscribeNotifications: Unsubscribe from daily job digests.
 - sendMessage: Send a WhatsApp message. Call this as many times as needed — for acks, updates, results, follow-ups.
@@ -56,6 +58,10 @@ FLOW EXAMPLES:
   2. saveResume(...)
   3. sendMessage("looks great! here's what i found in your resume: ...")
 
+- User sends a voice note:
+  1. transcribeAudio(filename from attachments)
+  2. Now you know what they said — respond to it normally (search jobs, answer questions, etc.)
+
 RULES:
 1. Every turn MUST include at least one sendMessage call. Never end a turn without talking to the user.
 2. Do not invent job details. Only report what tools return.
@@ -76,6 +82,7 @@ export async function runMainAgent(
         tools: {
           searchJobs: createSearchJobsTool(app, request),
           saveResume: createSaveResumeTool(app, request),
+          transcribeAudio: createTranscribeAudioTool(app, request),
           subscribeNotifications: createSubscribeNotificationsTool(app, request),
           unsubscribeNotifications: createUnsubscribeNotificationsTool(app, request),
           sendMessage: createSendMessageTool(app, request),
