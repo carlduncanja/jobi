@@ -2,6 +2,7 @@ import { tool, zodSchema } from 'ai';
 import { z } from 'zod/v4';
 
 import type { AppContext, MainAgentRequestContext } from '../lib/app-context';
+import { qualifyReferral } from '../db/store';
 import { ingestResumeFromRequest } from '../workflows/resume-ingestion';
 
 export function createSaveResumeTool(app: AppContext, request: MainAgentRequestContext) {
@@ -15,6 +16,10 @@ export function createSaveResumeTool(app: AppContext, request: MainAgentRequestC
     ),
     execute: async () => {
       const result = await ingestResumeFromRequest(app, request);
+
+      qualifyReferral(app.db, request.userId).catch((err) =>
+        app.logger.error({ err }, 'Failed to qualify referral'),
+      );
 
       return {
         summary: result.searchProfile.summary,

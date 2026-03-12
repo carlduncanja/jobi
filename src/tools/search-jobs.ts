@@ -3,6 +3,7 @@ import { z } from 'zod/v4';
 
 import { runJobSearchLoop } from '../ai/job-search-loop-agent';
 import type { AppContext, MainAgentRequestContext } from '../lib/app-context';
+import { qualifyReferral } from '../db/store';
 
 export function createSearchJobsTool(app: AppContext, request: MainAgentRequestContext) {
   return tool({
@@ -20,6 +21,10 @@ export function createSearchJobsTool(app: AppContext, request: MainAgentRequestC
           chatId: request.chatId,
           prompt: prompt || request.text,
         });
+
+        qualifyReferral(app.db, request.userId).catch((err) =>
+          app.logger.error({ err }, 'Failed to qualify referral'),
+        );
 
         return {
           summary: completion.summary,

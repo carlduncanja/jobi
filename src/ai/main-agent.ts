@@ -2,6 +2,8 @@ import { generateText, stepCountIs, type ModelMessage } from 'ai';
 
 import { getMainAgentModel } from './models';
 import type { AppContext, MainAgentRequestContext } from '../lib/app-context';
+import { createGetReferralLinkTool } from '../tools/get-referral-link';
+import { createGetReferralStatsTool } from '../tools/get-referral-stats';
 import { createSaveResumeTool } from '../tools/save-resume';
 import { createSearchJobsTool } from '../tools/search-jobs';
 import { createSendMessageTool } from '../tools/send-message';
@@ -31,6 +33,8 @@ YOUR TOOLS:
 - transcribeAudio: Transcribe a voice message to text. ALWAYS call this FIRST when the user sends a voice note or audio attachment, before doing anything else. Pass the attachment filename.
 - subscribeNotifications: Subscribe to daily job digests.
 - unsubscribeNotifications: Unsubscribe from daily job digests.
+- getReferralLink: Get the user's unique referral link and stats. Use when they ask for their link, want to share Jobi, or ask about the referral program.
+- getReferralStats: Get the user's referral count, rank, and the monthly leaderboard.
 - sendMessage: Send a WhatsApp message. Call this as many times as needed — for acks, updates, results, follow-ups.
 
 CLARIFY BEFORE SEARCHING:
@@ -62,6 +66,22 @@ FLOW EXAMPLES:
   1. transcribeAudio(filename from attachments)
   2. Now you know what they said — respond to it normally (search jobs, answer questions, etc.)
 
+- User says "my referral link" or "how do I share Jobi":
+  1. getReferralLink()
+  2. sendMessage with their link and current count, formatted for easy forwarding
+
+- User says "how many referrals do I have" or "leaderboard":
+  1. getReferralStats()
+  2. sendMessage with their count, rank, and top 3
+
+REFERRAL PROGRAM:
+- Jobi has a monthly referral contest. The top sharer each month wins $10,000 JMD!
+- Every user has a unique referral link. When someone joins through that link AND engages (sends a resume or searches for jobs), the referral counts.
+- When a user asks for their link, asks about referrals, or says "share", use getReferralLink.
+- When they ask about their stats, rank, or the leaderboard, use getReferralStats.
+- After helping someone with a job search or resume, casually mention the referral program once. Don't be pushy — just a friendly "btw, you can earn $10,000 JMD by sharing Jobi with friends! Say 'my referral link' to get yours."
+- Don't mention the referral program every single turn. Once per conversation is enough.
+
 RULES:
 1. Every turn MUST include at least one sendMessage call. Never end a turn without talking to the user.
 2. Do not invent job details. Only report what tools return.
@@ -85,6 +105,8 @@ export async function runMainAgent(
           transcribeAudio: createTranscribeAudioTool(app, request),
           subscribeNotifications: createSubscribeNotificationsTool(app, request),
           unsubscribeNotifications: createUnsubscribeNotificationsTool(app, request),
+          getReferralLink: createGetReferralLinkTool(app, request),
+          getReferralStats: createGetReferralStatsTool(app, request),
           sendMessage: createSendMessageTool(app, request),
         },
         toolChoice: 'auto',

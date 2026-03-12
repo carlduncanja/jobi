@@ -76,6 +76,27 @@ export async function createJobBotServer(
       '/api/whatsapp/session': {
         GET: async () => Response.json(await whatsappProvider.getSessionStatus()),
       },
+      '/qr': {
+        GET: async () => {
+          const status = await whatsappProvider.getSessionStatus();
+          if (status.state === 'open') {
+            return new Response('<html><body style="font-family:sans-serif;text-align:center;padding:40px"><h1>Already connected!</h1></body></html>', { headers: { 'Content-Type': 'text/html' } });
+          }
+          if (!status.qr) {
+            return new Response('<html><body style="font-family:sans-serif;text-align:center;padding:40px"><h1>No QR code available yet</h1><p>Refresh in a few seconds...</p><script>setTimeout(()=>location.reload(),3000)</script></body></html>', { headers: { 'Content-Type': 'text/html' } });
+          }
+          const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(status.qr)}`;
+          return new Response(
+            `<html><body style="font-family:sans-serif;text-align:center;padding:40px">` +
+            `<h1>Scan with WhatsApp</h1>` +
+            `<p>Open WhatsApp > Linked Devices > Link a Device</p>` +
+            `<img src="${qrUrl}" width="400" height="400" />` +
+            `<script>setTimeout(()=>location.reload(),20000)</script>` +
+            `</body></html>`,
+            { headers: { 'Content-Type': 'text/html' } },
+          );
+        },
+      },
       '/api/whatsapp/pairing-code': {
         POST: async (request: Request) => {
           const body = (await request.json()) as { phoneNumber?: string };

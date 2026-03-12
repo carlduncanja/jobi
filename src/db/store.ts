@@ -17,8 +17,25 @@ type StoredUser = {
   id?: string;
   chatId: string;
   phoneNumber?: string;
+  referredBy?: string;
   createdAt: string;
   updatedAt: string;
+};
+
+type StoredReferralCode = {
+  id?: string;
+  userId: string;
+  code: string;
+  createdAt: string;
+};
+
+type StoredReferral = {
+  id?: string;
+  referrerId: string;
+  referredUserId: string;
+  referralCode: string;
+  qualified: boolean;
+  createdAt: string;
 };
 
 type StoredAttachment = {
@@ -482,4 +499,184 @@ export async function clearSessionAuthState(
   sessionId: string,
 ): Promise<void> {
   await db.delete(asRecordId('wa_sessions', sessionId));
+}
+
+// --- Referral system ---
+
+function generateReferralCode(userId: string, displayName?: string): string {
+  const suffix = userId.slice(-4);
+  const prefix = (displayName ?? 'USER')
+    .replace(/[^A-Za-z]/g, '')
+    .toUpperCase()
+    .slice(0, 4) || 'USER';
+  return `${prefix}${suffix}`;
+}
+
+export async function getOrCreateReferralCode(
+  db: Database,
+  userId: string,
+  displayName?: string,
+): Promise<string> {
+  const [existing] = await db
+    .query<[StoredReferralCode[]]>(
+      'SELECT * FROM referral_codes WHERE userId = $userId LIMIT 1',
+      { userId },
+    )
+    .collect();
+
+  if (existing?.[0]) {
+    return existing[0].code;
+  }
+
+  let code = generateReferralCode(userId, displayName);
+
+  const [clash] = await db
+    .query<[StoredReferralCode[]]>(
+      'SELECT * FROM referral_codes WHERE code = $code LIMIT 1',
+      { code },
+    )
+    .collect();
+
+  if (clash?.[0]) {
+    code = `${code}${Math.floor(Math.random() * 90 + 10)}`;
+  }
+
+  const id = `${userId}-${code}`;
+  const record: StoredReferralCode = {
+    id,
+    userId,
+    code,
+    createdAt: isoNow(),
+  };
+
+  await db.create<StoredReferralCode>(asRecordId('referral_codes', id)).content(record as any);
+  return code;
+}
+
+export async function lookupReferralCode(
+  db: Database,
+  code: string,
+): Promise<string | undefined> {
+  const [rows] = await db
+    .query<[StoredReferralCode[]]>(
+      'SELECT * FROM referral_codes WHERE code = $code LIMIT 1',
+      { code: code.toUpperCase() },
+    )
+    .collect();
+
+  return rows?.[0]?.userId;
+}
+
+export async function createReferral(
+  db: Database,
+  params: { referrerId: string; referredUserId: string; referralCode: string },
+): Promise<StoredReferral> {
+  const id = `ref-${params.referredUserId}`;
+  const record: StoredReferral = {
+    id,
+    referrerId: params.referrerId,
+    referredUserId: params.referredUserId,
+    referralCode: params.referralCode,
+    qualified: false,
+    createdAt: isoNow(),
+  };
+
+  await db.create<StoredReferral>(asRecordId('referrals', id)).content(record as any);
+
+  await db.upsert(asRecordId('users', params.referredUserId)).merge({
+    referredBy: params.referrerId,
+    updatedAt: isoNow(),
+  } as any);
+
+  return record;
+}
+
+export async function qualifyReferral(
+  db: Database,
+  referredUserId: string,
+): Promise<{ qualified: boolean; referrerId?: string }> {
+  const [rows] = await db
+    .query<[StoredReferral[]]>(
+      'SELECT * FROM referrals WHERE referredUserId = $referredUserId LIMIT 1',
+      { referredUserId },
+    )
+    .collect();
+
+  const referral = rows?.[0];
+  if (!referral || referral.qualified) {
+    return { qualified: false };
+  }
+
+  const id = normalizeId(referral.id, 'referrals') ?? `ref-${referredUserId}`;
+  await db.upsert(asRecordId('referrals', id)).merge({
+    qualified: true,
+  } as any);
+
+  return { qualified: true, referrerId: referral.referrerId };
+}
+
+export async function getReferralStats(
+  db: Database,
+  userId: string,
+  month?: string,
+): Promise<{ count: number; rank: number }> {
+  const monthPrefix = month ?? isoNow().slice(0, 7);
+  const monthStart = `${monthPrefix}-01T00:00:00.000Z`;
+  const nextMonth = monthPrefix.slice(0, 5) +
+    String(Number(monthPrefix.slice(5, 7)) + 1).padStart(2, '0');
+  const monthEnd = `${nextMonth}-01T00:00:00.000Z`;
+
+  const [countRows] = await db
+    .query<[Array<{ count: number }>]>(
+      `SELECT count() AS count FROM referrals
+       WHERE referrerId = $userId AND qualified = true
+         AND createdAt >= $monthStart AND createdAt < $monthEnd
+       GROUP ALL`,
+      { userId, monthStart, monthEnd },
+    )
+    .collect();
+
+  const count = countRows?.[0]?.count ?? 0;
+
+  const [leaderboardRows] = await db
+    .query<[Array<{ referrerId: string; count: number }>]>(
+      `SELECT referrerId, count() AS count FROM referrals
+       WHERE qualified = true
+         AND createdAt >= $monthStart AND createdAt < $monthEnd
+       GROUP BY referrerId
+       ORDER BY count DESC`,
+      { monthStart, monthEnd },
+    )
+    .collect();
+
+  const leaderboard = leaderboardRows ?? [];
+  const rank = leaderboard.findIndex((r) => r.referrerId === userId) + 1;
+
+  return { count, rank: rank || leaderboard.length + 1 };
+}
+
+export async function getLeaderboard(
+  db: Database,
+  month?: string,
+  limit = 5,
+): Promise<Array<{ userId: string; count: number }>> {
+  const monthPrefix = month ?? isoNow().slice(0, 7);
+  const monthStart = `${monthPrefix}-01T00:00:00.000Z`;
+  const nextMonth = monthPrefix.slice(0, 5) +
+    String(Number(monthPrefix.slice(5, 7)) + 1).padStart(2, '0');
+  const monthEnd = `${nextMonth}-01T00:00:00.000Z`;
+
+  const [rows] = await db
+    .query<[Array<{ referrerId: string; count: number }>]>(
+      `SELECT referrerId, count() AS count FROM referrals
+       WHERE qualified = true
+         AND createdAt >= $monthStart AND createdAt < $monthEnd
+       GROUP BY referrerId
+       ORDER BY count DESC
+       LIMIT $limit`,
+      { monthStart, monthEnd, limit },
+    )
+    .collect();
+
+  return (rows ?? []).map((r) => ({ userId: r.referrerId, count: r.count }));
 }

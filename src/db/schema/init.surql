@@ -1,9 +1,26 @@
 DEFINE TABLE IF NOT EXISTS users SCHEMAFULL;
 DEFINE FIELD IF NOT EXISTS chatId ON TABLE users TYPE string;
 DEFINE FIELD IF NOT EXISTS phoneNumber ON TABLE users TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS referredBy ON TABLE users TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS createdAt ON TABLE users TYPE string;
 DEFINE FIELD IF NOT EXISTS updatedAt ON TABLE users TYPE string;
 DEFINE INDEX IF NOT EXISTS users_chat_id ON TABLE users COLUMNS chatId UNIQUE;
+
+DEFINE TABLE IF NOT EXISTS referral_codes SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS userId ON TABLE referral_codes TYPE string;
+DEFINE FIELD IF NOT EXISTS code ON TABLE referral_codes TYPE string;
+DEFINE FIELD IF NOT EXISTS createdAt ON TABLE referral_codes TYPE string;
+DEFINE INDEX IF NOT EXISTS referral_codes_code ON TABLE referral_codes COLUMNS code UNIQUE;
+DEFINE INDEX IF NOT EXISTS referral_codes_user_id ON TABLE referral_codes COLUMNS userId UNIQUE;
+
+DEFINE TABLE IF NOT EXISTS referrals SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS referrerId ON TABLE referrals TYPE string;
+DEFINE FIELD IF NOT EXISTS referredUserId ON TABLE referrals TYPE string;
+DEFINE FIELD IF NOT EXISTS referralCode ON TABLE referrals TYPE string;
+DEFINE FIELD IF NOT EXISTS qualified ON TABLE referrals TYPE bool;
+DEFINE FIELD IF NOT EXISTS createdAt ON TABLE referrals TYPE string;
+DEFINE INDEX IF NOT EXISTS referrals_referred_user ON TABLE referrals COLUMNS referredUserId UNIQUE;
+DEFINE INDEX IF NOT EXISTS referrals_referrer_created ON TABLE referrals COLUMNS referrerId, createdAt;
 
 DEFINE TABLE IF NOT EXISTS wa_sessions SCHEMAFULL;
 DEFINE FIELD IF NOT EXISTS sessionId ON TABLE wa_sessions TYPE string;
