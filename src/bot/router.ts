@@ -14,32 +14,45 @@ import { runMainAgent } from '../ai/main-agent';
 
 const REFERRAL_CODE_RE = /\bREF-([A-Z0-9]+)\b/i;
 
-const chatQueues = new Map<string, Promise<void>>();
+interface ChatQueueEntry {
+  promise: Promise<void>;
+  abort: AbortController;
+}
+
+const chatQueues = new Map<string, ChatQueueEntry>();
 
 export function enqueueMessage(app: AppContext, message: NormalizedIncomingMessage): void {
   const chatId = message.chatId;
-  const previous = chatQueues.get(chatId) ?? Promise.resolve();
+  const existing = chatQueues.get(chatId);
 
-  const next = previous
-    .then(() => handleIncomingWhatsAppMessage(app, message))
+  if (existing) {
+    existing.abort.abort();
+    app.logger.info({ chatId, userId: message.userId }, 'Cancelled previous in-progress message for chat');
+  }
+
+  const controller = new AbortController();
+
+  const promise = handleIncomingWhatsAppMessage(app, message, controller.signal)
     .catch((error) => {
+      if (error instanceof Error && error.name === 'AbortError') return;
       app.logger.error(
         { err: error, chatId: message.chatId, userId: message.userId },
         'Failed to handle incoming WhatsApp message',
       );
     })
     .finally(() => {
-      if (chatQueues.get(chatId) === next) {
+      if (chatQueues.get(chatId)?.promise === promise) {
         chatQueues.delete(chatId);
       }
     });
 
-  chatQueues.set(chatId, next);
+  chatQueues.set(chatId, { promise, abort: controller });
 }
 
 async function handleIncomingWhatsAppMessage(
   app: AppContext,
   message: NormalizedIncomingMessage,
+  abortSignal: AbortSignal,
 ): Promise<void> {
   app.logger.info(
     { userId: message.userId, chatId: message.chatId, text: message.text, attachments: message.attachments.length },
@@ -110,6 +123,7 @@ async function handleIncomingWhatsAppMessage(
     allowSending: true,
     sentMessages: [],
     history,
+    abortSignal,
   });
 }
 

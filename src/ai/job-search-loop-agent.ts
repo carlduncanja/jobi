@@ -55,7 +55,7 @@ export async function runJobSearchLoop(
         abortSignal: AbortSignal.timeout(90_000),
         prompt: input.prompt,
       }),
-      { maxRetries: 2, label: 'search-loop', logger: app.logger },
+      { maxRetries: 1, label: 'search-loop', logger: app.logger },
     );
 
     return (

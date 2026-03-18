@@ -5,6 +5,8 @@ import { runJobSearchLoop } from '../ai/job-search-loop-agent';
 import type { AppContext, MainAgentRequestContext } from '../lib/app-context';
 import { qualifyReferral } from '../db/store';
 
+const HEARTBEAT_DELAY_MS = 25_000;
+
 export function createSearchJobsTool(app: AppContext, request: MainAgentRequestContext) {
   return tool({
     description:
@@ -15,6 +17,17 @@ export function createSearchJobsTool(app: AppContext, request: MainAgentRequestC
       }),
     ),
     execute: async ({ prompt }) => {
+      let heartbeatTimer: ReturnType<typeof setTimeout> | undefined;
+
+      if (request.allowSending && app.whatsappProvider) {
+        heartbeatTimer = setTimeout(() => {
+          app.whatsappProvider!.sendText({
+            chatId: request.chatId,
+            text: 'still searching, hang tight... 🔍',
+          }).catch(() => {});
+        }, HEARTBEAT_DELAY_MS);
+      }
+
       try {
         const completion = await runJobSearchLoop(app, {
           userId: request.userId,
@@ -44,6 +57,8 @@ export function createSearchJobsTool(app: AppContext, request: MainAgentRequestC
           queries: [],
           jobs: [],
         };
+      } finally {
+        clearTimeout(heartbeatTimer);
       }
     },
   });

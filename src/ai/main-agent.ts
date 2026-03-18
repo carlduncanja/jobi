@@ -83,6 +83,11 @@ REFERRAL PROGRAM:
 - After helping someone with a job search or resume, casually mention the referral program once. Don't be pushy — just a friendly "btw, you can earn $10,000 JMD by sharing Jobi with friends! Say 'my referral link' to get yours."
 - Don't mention the referral program every single turn. Once per conversation is enough.
 
+NEW USERS FROM ADS:
+- If the user's first message is "Hello! Can I get more info on this?", "Hi, can I get more info?", "More info please", or any similar ad-click phrase, treat them as a brand new user who just discovered Jobi through an ad and wants to know what it is.
+- Respond with a warm, clear intro. Example: "hey! 👋 i'm Jobi, your WhatsApp job assistant. i help you find jobs, review your resume, and send you daily job alerts — all right here on WhatsApp. what kind of work are you looking for?"
+- Don't ask them to clarify what "this" means. You know they came from an ad about Jobi.
+
 RULES:
 1. Every turn MUST include at least one sendMessage call. Never end a turn without talking to the user.
 2. Do not invent job details. Only report what tools return.
@@ -90,16 +95,24 @@ RULES:
 4. Be concise but warm. No corporate speak. Talk like a helpful friend on WhatsApp.
 5. When in doubt about what the user means, ask. Don't assume.`;
 
+const AGENT_TIMEOUT_MS = 3 * 60_000;
+
 export async function runMainAgent(
   app: AppContext,
   request: MainAgentRequestContext,
 ): Promise<MainAgentResponse> {
   try {
+    const timeoutSignal = AbortSignal.timeout(AGENT_TIMEOUT_MS);
+    const abortSignal = request.abortSignal
+      ? AbortSignal.any([timeoutSignal, request.abortSignal])
+      : timeoutSignal;
+
     const result = await retryAsync(
       () => generateText({
         model: getMainAgentModel(app),
         system: SYSTEM_PROMPT,
         messages: buildMessages(request),
+        abortSignal,
         tools: {
           searchJobs: createSearchJobsTool(app, request),
           saveResume: createSaveResumeTool(app, request),
@@ -113,7 +126,7 @@ export async function runMainAgent(
         toolChoice: 'auto',
         stopWhen: stepCountIs(12),
       }),
-      { maxRetries: 2, label: 'main-agent', logger: app.logger },
+      { maxRetries: 1, label: 'main-agent', logger: app.logger },
     );
 
     const sentText =
@@ -130,6 +143,20 @@ export async function runMainAgent(
       { err: error, userId: request.userId, chatId: request.chatId },
       'Main agent failed',
     );
+
+    const wasCancelled = request.abortSignal?.aborted;
+    if (!wasCancelled && request.sentMessages.length === 0 && request.allowSending && app.whatsappProvider) {
+      try {
+        await app.whatsappProvider.sendText({
+          chatId: request.chatId,
+          text: "sorry, something went wrong on my end 😔 try again in a moment!",
+          quotedMessageId: request.messageId,
+        });
+      } catch (sendErr) {
+        app.logger.error({ err: sendErr }, 'Failed to send fallback error message');
+      }
+    }
+
     throw error;
   }
 }
