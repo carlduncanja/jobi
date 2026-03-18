@@ -140,6 +140,12 @@ export async function retryAsync<T>(
     try {
       return await fn();
     } catch (error) {
+      const isAbort =
+        error instanceof Error &&
+        (error.name === 'AbortError' || error.message.toLowerCase().includes('aborted'));
+
+      if (isAbort) throw error;
+
       const isRetryable =
         error instanceof Error &&
         (error.message.includes('timed out') ||

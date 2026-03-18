@@ -14,6 +14,17 @@ import { runMainAgent } from '../ai/main-agent';
 
 const REFERRAL_CODE_RE = /\bREF-([A-Z0-9]+)\b/i;
 
+function isAbortError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  if (error.name === 'AbortError') return true;
+  // AI Gateway wraps abort as GatewayResponseError with "aborted" in the message
+  if (error.message.toLowerCase().includes('aborted')) return true;
+  // Check cause chain
+  const cause = (error as any).cause;
+  if (cause instanceof Error) return isAbortError(cause);
+  return false;
+}
+
 interface ChatQueueEntry {
   promise: Promise<void>;
   abort: AbortController;
@@ -34,7 +45,7 @@ export function enqueueMessage(app: AppContext, message: NormalizedIncomingMessa
 
   const promise = handleIncomingWhatsAppMessage(app, message, controller.signal)
     .catch((error) => {
-      if (error instanceof Error && error.name === 'AbortError') return;
+      if (isAbortError(error)) return;
       app.logger.error(
         { err: error, chatId: message.chatId, userId: message.userId },
         'Failed to handle incoming WhatsApp message',

@@ -97,6 +97,15 @@ RULES:
 
 const AGENT_TIMEOUT_MS = 3 * 60_000;
 
+function isAbortError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  if (error.name === 'AbortError') return true;
+  if (error.message.toLowerCase().includes('aborted')) return true;
+  const cause = (error as any).cause;
+  if (cause instanceof Error) return isAbortError(cause);
+  return false;
+}
+
 export async function runMainAgent(
   app: AppContext,
   request: MainAgentRequestContext,
@@ -139,12 +148,15 @@ export async function runMainAgent(
       sentMessageCount: request.sentMessages.length,
     };
   } catch (error) {
-    app.logger.error(
-      { err: error, userId: request.userId, chatId: request.chatId },
-      'Main agent failed',
-    );
+    const wasCancelled = request.abortSignal?.aborted || isAbortError(error);
 
-    const wasCancelled = request.abortSignal?.aborted;
+    if (!wasCancelled) {
+      app.logger.error(
+        { err: error, userId: request.userId, chatId: request.chatId },
+        'Main agent failed',
+      );
+    }
+
     if (!wasCancelled && request.sentMessages.length === 0 && request.allowSending && app.whatsappProvider) {
       try {
         await app.whatsappProvider.sendText({
