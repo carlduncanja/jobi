@@ -19,6 +19,14 @@ interface ExaApiResponse {
   }>;
 }
 
+function thirtyDaysAgo(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - 30);
+  return d.toISOString().slice(0, 10);
+}
+
+const SIXTY_DAYS_MS = 60 * 24 * 60 * 60 * 1000;
+
 export class ExaSearchProvider implements SearchProvider {
   constructor(private readonly options: ExaSearchOptions) {}
 
@@ -36,6 +44,7 @@ export class ExaSearchProvider implements SearchProvider {
         numResults: input.numResults ?? 5,
         includeDomains: input.includeDomains,
         excludeDomains: input.excludeDomains,
+        startPublishedDate: thirtyDaysAgo(),
         contents: {
           text: { maxCharacters: 3000 },
           highlights: {
@@ -43,7 +52,7 @@ export class ExaSearchProvider implements SearchProvider {
             highlightsPerUrl: 3,
             query: input.query,
           },
-          livecrawl: 'fallback',
+          livecrawl: 'always',
         },
       }),
     });
@@ -56,9 +65,16 @@ export class ExaSearchProvider implements SearchProvider {
 
     const payload = (await response.json()) as ExaApiResponse;
 
+    const now = Date.now();
+
     return (payload.results ?? [])
       .filter((result): result is Required<Pick<typeof result, 'title' | 'url'>> & typeof result => {
         return Boolean(result.title && result.url);
+      })
+      .filter((result) => {
+        if (!result.publishedDate) return true;
+        const age = now - new Date(result.publishedDate).getTime();
+        return age <= SIXTY_DAYS_MS;
       })
       .map((result) => ({
         title: result.title,
