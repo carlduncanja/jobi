@@ -23,7 +23,11 @@ export function createSendVoiceNoteTool(app: AppContext, request: MainAgentReque
 
       const audioBytes = await synthesizeSpeech(app, text);
       if (!audioBytes) {
-        return { error: 'TTS failed, could not generate voice note' };
+        // TTS failed — fall back to text so the user still gets a reply
+        app.logger.warn({ userId: request.userId }, 'TTS failed, falling back to text message');
+        await app.whatsappProvider.sendText({ chatId: request.chatId, text });
+        request.sentMessages.push({ text });
+        return { delivered: true, fallbackToText: true };
       }
 
       const result = await app.whatsappProvider.sendAudio({

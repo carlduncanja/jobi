@@ -405,6 +405,13 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
       this.app.logger.warn({ err, messageId: message.key.id }, 'Failed to extract attachments, skipping');
       return [] as NormalizedAttachment[];
     });
+
+    // Drop messages with no text and no attachments — these are Baileys
+    // duplicate/update events (e.g. read receipts) that have nothing to process.
+    if (!text.trim() && attachments.length === 0) {
+      return null;
+    }
+
     const rawUserId = (message.key.participant ?? message.key.remoteJid).split('@')[0];
     const userId = rawUserId || message.key.remoteJid.split('@')[0];
     const timestampSeconds = Number(message.messageTimestamp ?? Math.floor(Date.now() / 1000));

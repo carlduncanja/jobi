@@ -8,6 +8,16 @@ import { createJobBotServer } from './server/create-server';
 
 const env = loadEnv();
 const logger = createLogger();
+
+// Prevent a single unhandled error from crashing the entire process.
+// Individual message jobs already have their own try/catch — these are a
+// last-resort safety net for anything that slips through.
+process.on('uncaughtException', (err) => {
+  logger.error({ err }, 'Uncaught exception — process kept alive');
+});
+process.on('unhandledRejection', (reason) => {
+  logger.error({ reason }, 'Unhandled promise rejection — process kept alive');
+});
 const db = await connectSurreal(env, logger);
 
 if (env.applySchemaOnBoot) {
