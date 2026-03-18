@@ -19,17 +19,37 @@ const REFERRAL_CODE_RE = /\bREF-([A-Z0-9]+)\b/i;
 // Every message is guaranteed to be processed — nothing is dropped or cancelled.
 const chatQueues = new Map<string, Promise<void>>();
 
+// Hard ceiling per message — if the agent hasn't finished in 2 minutes, give up
+// and free the queue so the next message can run immediately.
+const MESSAGE_DEADLINE_MS = 2 * 60_000;
+
 export function enqueueMessage(app: AppContext, message: NormalizedIncomingMessage): void {
   const chatId = message.chatId;
   const tail = chatQueues.get(chatId) ?? Promise.resolve();
 
   const next = tail
-    .then(() => handleIncomingWhatsAppMessage(app, message))
+    .then(() => {
+      const deadline = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('message_deadline_exceeded')), MESSAGE_DEADLINE_MS),
+      );
+      return Promise.race([
+        handleIncomingWhatsAppMessage(app, message),
+        deadline,
+      ]);
+    })
     .catch((err) => {
+      const isDeadline = err instanceof Error && err.message === 'message_deadline_exceeded';
       app.logger.error(
-        { err, chatId: message.chatId, userId: message.userId },
+        { err, chatId: message.chatId, userId: message.userId, isDeadline },
         'Failed to handle incoming WhatsApp message',
       );
+      // Send fallback if deadline hit and nothing was sent yet
+      if (isDeadline && app.whatsappProvider) {
+        app.whatsappProvider.sendText({
+          chatId: message.chatId,
+          text: "sorry, that took too long on my end 😔 try again!",
+        }).catch(() => {});
+      }
     })
     .finally(() => {
       if (chatQueues.get(chatId) === next) {

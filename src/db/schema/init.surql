@@ -134,6 +134,19 @@ DEFINE FIELD IF NOT EXISTS createdAt ON TABLE broadcast_runs TYPE string;
 DEFINE FIELD IF NOT EXISTS updatedAt ON TABLE broadcast_runs TYPE string;
 DEFINE INDEX IF NOT EXISTS broadcast_runs_date_key ON TABLE broadcast_runs COLUMNS dateKey UNIQUE;
 
+DEFINE TABLE IF NOT EXISTS payments SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS userId ON TABLE payments TYPE string;
+DEFINE FIELD IF NOT EXISTS chatId ON TABLE payments TYPE string;
+DEFINE FIELD IF NOT EXISTS stripeSessionId ON TABLE payments TYPE string;
+DEFINE FIELD IF NOT EXISTS stripePaymentIntentId ON TABLE payments TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS product ON TABLE payments TYPE string;
+DEFINE FIELD IF NOT EXISTS amountUsd ON TABLE payments TYPE number;
+DEFINE FIELD IF NOT EXISTS status ON TABLE payments TYPE string;
+DEFINE FIELD IF NOT EXISTS createdAt ON TABLE payments TYPE string;
+DEFINE FIELD IF NOT EXISTS updatedAt ON TABLE payments TYPE string;
+DEFINE INDEX IF NOT EXISTS payments_stripe_session ON TABLE payments COLUMNS stripeSessionId UNIQUE;
+DEFINE INDEX IF NOT EXISTS payments_user ON TABLE payments COLUMNS userId;
+
 DEFINE TABLE IF NOT EXISTS broadcast_deliveries SCHEMAFULL;
 DEFINE FIELD IF NOT EXISTS runId ON TABLE broadcast_deliveries TYPE string;
 DEFINE FIELD IF NOT EXISTS userId ON TABLE broadcast_deliveries TYPE string;

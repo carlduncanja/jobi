@@ -45,6 +45,14 @@ export interface OutboundTextMessage {
   quotedMessageId?: string;
 }
 
+export interface OutboundDocumentMessage {
+  chatId: string;
+  documentBytes: Uint8Array;
+  mimeType: string;
+  filename: string;
+  caption?: string;
+}
+
 export interface OutboundAudioMessage {
   chatId: string;
   audioBytes: Uint8Array;

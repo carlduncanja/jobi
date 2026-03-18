@@ -4,9 +4,11 @@ import { getMainAgentModel } from './models';
 import type { AppContext, MainAgentRequestContext } from '../lib/app-context';
 import { createGetReferralLinkTool } from '../tools/get-referral-link';
 import { createGetReferralStatsTool } from '../tools/get-referral-stats';
+import { createPaymentLinkTool } from '../tools/create-payment-link';
 import { createSaveResumeTool } from '../tools/save-resume';
 import { createSearchJobsTool } from '../tools/search-jobs';
 import { createSendMessageTool } from '../tools/send-message';
+import { createSendResumePdfTool } from '../tools/send-resume-pdf';
 import { createSendVoiceNoteTool } from '../tools/send-voice-note';
 import { createSubscribeNotificationsTool } from '../tools/subscribe-notifications';
 import { createTranscribeAudioTool } from '../tools/transcribe-audio';
@@ -35,6 +37,8 @@ TOOLS:
 - unsubscribeNotifications: turn off daily alerts
 - getReferralLink: get the user's referral link
 - getReferralStats: get referral count, rank, leaderboard
+- createPaymentLink: create a Stripe checkout link for a paid product and send it to the user
+- sendResumePdf: generate a clean PDF resume from their saved profile and send it via WhatsApp
 - sendMessage: send a text message
 - sendVoiceNote: send a voice note (spoken audio)
 
@@ -62,10 +66,24 @@ No jobs found:
 2. sendMessage("want me to set up an alert so you hear when something shows up?")
 3. If yes → subscribeNotifications() → sendMessage("done, i'll hit you up 🔔")
 
-Resume:
+Resume received:
 1. sendMessage("got it, looking at your resume...")
 2. saveResume(...)
 3. sendVoiceNote with a warm reaction + sendMessage with the summary
+4. ALWAYS follow up with the upsell pitch (see RESUME UPSELL below)
+
+Resume upsell (after every resume save):
+1. sendMessage("your resume looks good but i noticed a few things that could hurt your chances — want me to send you a full review with fixes? it's $500 JMD")
+2. If yes → createPaymentLink({ product: "resume_review" })
+   - If result has alreadyPaid: true → sendMessage("you already paid for this — let me send your review now") then sendResumePdf({ reviewNotes: "..." })
+   - If result has error "no_resume" → sendMessage("send me your resume first and i'll get that sorted")
+   - Otherwise → sendMessage with the checkout link
+3. After payment confirmed (user says they paid or you see confirmation) → sendResumePdf({ reviewNotes: "..." }) with a 2-3 sentence review note
+
+PDF resume request (user asks for their resume as PDF):
+1. sendResumePdf()
+   - If result has error "not_paid" → sendMessage("the PDF is part of the full review — it's $500 JMD. want me to send you the payment link?")
+   - If yes → createPaymentLink({ product: "resume_review" }) → sendMessage with the checkout link
 
 Incoming voice note:
 1. transcribeAudio(...)
@@ -91,26 +109,14 @@ RULES:
 3. Never say "I found some jobs" if the jobs array is empty.
 4. Remember context from the conversation — don't ask for info they already gave you.`;
 
-const AGENT_TIMEOUT_MS = 3 * 60_000;
-
-function isAbortError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  if (error.name === 'AbortError') return true;
-  if (error.message.toLowerCase().includes('aborted')) return true;
-  const cause = (error as any).cause;
-  if (cause instanceof Error) return isAbortError(cause);
-  return false;
-}
+const AGENT_TIMEOUT_MS = 90_000; // 90 seconds — search loop is capped at 55s so this gives headroom
 
 export async function runMainAgent(
   app: AppContext,
   request: MainAgentRequestContext,
 ): Promise<MainAgentResponse> {
   try {
-    const timeoutSignal = AbortSignal.timeout(AGENT_TIMEOUT_MS);
-    const abortSignal = request.abortSignal
-      ? AbortSignal.any([timeoutSignal, request.abortSignal])
-      : timeoutSignal;
+    const abortSignal = AbortSignal.timeout(AGENT_TIMEOUT_MS);
 
     const result = await retryAsync(
       () => generateText({
@@ -126,11 +132,13 @@ export async function runMainAgent(
           unsubscribeNotifications: createUnsubscribeNotificationsTool(app, request),
           getReferralLink: createGetReferralLinkTool(app, request),
           getReferralStats: createGetReferralStatsTool(app, request),
+          createPaymentLink: createPaymentLinkTool(app, request),
+          sendResumePdf: createSendResumePdfTool(app, request),
           sendMessage: createSendMessageTool(app, request),
           sendVoiceNote: createSendVoiceNoteTool(app, request),
         },
         toolChoice: 'auto',
-        stopWhen: stepCountIs(12),
+        stopWhen: stepCountIs(15),
       }),
       { maxRetries: 1, label: 'main-agent', logger: app.logger },
     );
@@ -145,16 +153,12 @@ export async function runMainAgent(
       sentMessageCount: request.sentMessages.length,
     };
   } catch (error) {
-    const wasCancelled = request.abortSignal?.aborted || isAbortError(error);
+    app.logger.error(
+      { err: error, userId: request.userId, chatId: request.chatId },
+      'Main agent failed',
+    );
 
-    if (!wasCancelled) {
-      app.logger.error(
-        { err: error, userId: request.userId, chatId: request.chatId },
-        'Main agent failed',
-      );
-    }
-
-    if (!wasCancelled && request.sentMessages.length === 0 && request.allowSending && app.whatsappProvider) {
+    if (request.sentMessages.length === 0 && request.allowSending && app.whatsappProvider) {
       try {
         await app.whatsappProvider.sendText({
           chatId: request.chatId,

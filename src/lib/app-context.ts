@@ -31,5 +31,4 @@ export interface MainAgentRequestContext {
     providerMessageId?: string;
   }>;
   history: ChatHistoryMessage[];
-  abortSignal?: AbortSignal;
 }

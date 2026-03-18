@@ -29,6 +29,10 @@ const envSchema = z
       .string()
       .optional()
       .transform((value) => value === 'true'),
+
+    STRIPE_SECRET_KEY: z.string().optional(),
+    STRIPE_WEBHOOK_SECRET: z.string().optional(),
+    PUBLIC_URL: z.string().optional(),
   });
 
 export type Env = ReturnType<typeof loadEnv>;
@@ -66,5 +70,10 @@ export function loadEnv() {
       startUtcHour: 15,
       durationMinutes: 120,
     },
+    stripe: {
+      secretKey: parsed.data.STRIPE_SECRET_KEY,
+      webhookSecret: parsed.data.STRIPE_WEBHOOK_SECRET,
+    },
+    publicUrl: parsed.data.PUBLIC_URL ?? '',
   };
 }

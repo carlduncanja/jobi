@@ -16,6 +16,8 @@ import { ExaSearchProvider } from '../../src/integrations/search/exa-search';
 import type { AppContext } from '../../src/lib/app-context';
 import type {
   AgentRequestAttachmentInput,
+  OutboundAudioMessage,
+  OutboundDocumentMessage,
   OutboundTextMessage,
   SendMessageResult,
   WhatsAppProviderEvent,
@@ -67,6 +69,14 @@ export class FakeWhatsAppProvider implements WhatsAppProvider {
       delivered: true,
       providerMessageId: `fake-${this.sentMessages.length}`,
     };
+  }
+
+  async sendAudio(_message: OutboundAudioMessage): Promise<SendMessageResult> {
+    return { delivered: true, providerMessageId: `fake-audio-${Date.now()}` };
+  }
+
+  async sendDocument(_message: OutboundDocumentMessage): Promise<SendMessageResult> {
+    return { delivered: true, providerMessageId: `fake-doc-${Date.now()}` };
   }
 
   async getSessionStatus(): Promise<WhatsAppSessionStatus> {

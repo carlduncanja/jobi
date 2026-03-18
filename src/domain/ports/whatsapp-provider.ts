@@ -1,5 +1,6 @@
 import type {
   OutboundAudioMessage,
+  OutboundDocumentMessage,
   OutboundTextMessage,
   SendMessageResult,
   WhatsAppProviderEvent,
@@ -12,6 +13,7 @@ export interface WhatsAppProvider {
   subscribe(listener: (event: WhatsAppProviderEvent) => Promise<void> | void): () => void;
   sendText(message: OutboundTextMessage): Promise<SendMessageResult>;
   sendAudio(message: OutboundAudioMessage): Promise<SendMessageResult>;
+  sendDocument(message: OutboundDocumentMessage): Promise<SendMessageResult>;
   getSessionStatus(): Promise<WhatsAppSessionStatus>;
   requestPairingCode(phoneNumber: string): Promise<string>;
 }

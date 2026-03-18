@@ -201,6 +201,15 @@ export async function saveResumeProfile(
   return profile;
 }
 
+export async function getResumeProfile(
+  db: Database,
+  userId: string,
+): Promise<ResumeProfile | undefined> {
+  return ((await db.select<ResumeProfile>(asRecordId('resume_profiles', userId))) ?? undefined) as
+    | ResumeProfile
+    | undefined;
+}
+
 export async function saveSearchProfile(
   db: Database,
   profile: SearchProfile,
@@ -679,4 +688,82 @@ export async function getLeaderboard(
     .collect();
 
   return (rows ?? []).map((r) => ({ userId: r.referrerId, count: r.count }));
+}
+
+// ── Payments ──────────────────────────────────────────────────────────────────
+
+type StoredPayment = {
+  id?: string;
+  userId: string;
+  chatId: string;
+  stripeSessionId: string;
+  stripePaymentIntentId?: string;
+  product: string;
+  amountUsd: number;
+  status: 'pending' | 'paid' | 'failed';
+  createdAt: string;
+  updatedAt: string;
+};
+
+export async function createPayment(
+  db: Database,
+  data: Omit<StoredPayment, 'id' | 'createdAt' | 'updatedAt'>,
+): Promise<StoredPayment> {
+  const now = isoNow();
+  const record: StoredPayment = { ...data, createdAt: now, updatedAt: now };
+  await db
+    .create<StoredPayment>(asRecordId('payments', data.stripeSessionId))
+    .content(record as any);
+  return record;
+}
+
+export async function markPaymentPaid(
+  db: Database,
+  stripeSessionId: string,
+  stripePaymentIntentId: string,
+): Promise<StoredPayment | null> {
+  const [rows] = await db
+    .query<[StoredPayment[]]>(
+      'SELECT * FROM payments WHERE stripeSessionId = $sid LIMIT 1',
+      { sid: stripeSessionId },
+    )
+    .collect();
+  const payment = rows?.[0];
+  if (!payment) return null;
+
+  const id = normalizeId(payment.id, 'payments') ?? stripeSessionId;
+  await db.upsert(asRecordId('payments', id)).merge({
+    status: 'paid',
+    stripePaymentIntentId,
+    updatedAt: isoNow(),
+  } as any);
+
+  return { ...payment, status: 'paid', stripePaymentIntentId };
+}
+
+export async function getPaymentBySession(
+  db: Database,
+  stripeSessionId: string,
+): Promise<StoredPayment | null> {
+  const [rows] = await db
+    .query<[StoredPayment[]]>(
+      'SELECT * FROM payments WHERE stripeSessionId = $sid LIMIT 1',
+      { sid: stripeSessionId },
+    )
+    .collect();
+  return rows?.[0] ?? null;
+}
+
+export async function hasPaidForProduct(
+  db: Database,
+  userId: string,
+  product: string,
+): Promise<boolean> {
+  const [rows] = await db
+    .query<[StoredPayment[]]>(
+      'SELECT * FROM payments WHERE userId = $userId AND product = $product AND status = "paid" LIMIT 1',
+      { userId, product },
+    )
+    .collect();
+  return (rows?.length ?? 0) > 0;
 }

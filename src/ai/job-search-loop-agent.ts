@@ -52,10 +52,10 @@ export async function runJobSearchLoop(
   try {
     const result = await retryAsync(
       () => agent.generate({
-        abortSignal: AbortSignal.timeout(90_000),
+        abortSignal: AbortSignal.timeout(55_000),
         prompt: input.prompt,
       }),
-      { maxRetries: 1, label: 'search-loop', logger: app.logger },
+      { maxRetries: 0, label: 'search-loop', logger: app.logger },
     );
 
     return (

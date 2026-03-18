@@ -3,6 +3,7 @@ import { enqueueMessage } from '../bot/router';
 import type { AppContext } from '../lib/app-context';
 import type { WhatsAppProvider } from '../domain/ports/whatsapp-provider';
 import { processDailyDigestWindow } from '../workflows/daily-digest';
+import { handleStripeWebhook } from './stripe-webhook';
 
 export interface CreateJobBotServerOptions {
   app: AppContext;
@@ -96,6 +97,9 @@ export async function createJobBotServer(
             { headers: { 'Content-Type': 'text/html' } },
           );
         },
+      },
+      '/webhooks/stripe': {
+        POST: (request: Request) => handleStripeWebhook(app, request),
       },
       '/api/whatsapp/pairing-code': {
         POST: async (request: Request) => {

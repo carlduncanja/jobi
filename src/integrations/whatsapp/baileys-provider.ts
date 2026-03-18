@@ -26,6 +26,7 @@ import type {
   NormalizedAttachment,
   NormalizedIncomingMessage,
   OutboundAudioMessage,
+  OutboundDocumentMessage,
   OutboundTextMessage,
   SendMessageResult,
   WhatsAppProviderEvent,
@@ -103,6 +104,24 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
       audio: Buffer.from(message.audioBytes),
       mimetype: message.mimeType,
       ptt: true,
+    });
+
+    return {
+      delivered: true,
+      providerMessageId: sent?.key?.id ?? undefined,
+    };
+  }
+
+  async sendDocument(message: OutboundDocumentMessage): Promise<SendMessageResult> {
+    if (!this.socket) {
+      throw new Error('WhatsApp socket is not connected');
+    }
+
+    const sent = await this.socket.sendMessage(message.chatId, {
+      document: Buffer.from(message.documentBytes),
+      mimetype: message.mimeType,
+      fileName: message.filename,
+      caption: message.caption,
     });
 
     return {
