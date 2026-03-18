@@ -13,7 +13,6 @@ import { createSendVoiceNoteTool } from '../tools/send-voice-note';
 import { createSubscribeNotificationsTool } from '../tools/subscribe-notifications';
 import { createTranscribeAudioTool } from '../tools/transcribe-audio';
 import { createUnsubscribeNotificationsTool } from '../tools/unsubscribe-notifications';
-import { retryAsync } from '../lib/utils';
 
 export interface MainAgentResponse {
   text: string;
@@ -118,30 +117,27 @@ export async function runMainAgent(
   try {
     const abortSignal = AbortSignal.timeout(AGENT_TIMEOUT_MS);
 
-    const result = await retryAsync(
-      () => generateText({
-        model: getMainAgentModel(app),
-        system: SYSTEM_PROMPT,
-        messages: buildMessages(request),
-        abortSignal,
-        tools: {
-          searchJobs: createSearchJobsTool(app, request),
-          saveResume: createSaveResumeTool(app, request),
-          transcribeAudio: createTranscribeAudioTool(app, request),
-          subscribeNotifications: createSubscribeNotificationsTool(app, request),
-          unsubscribeNotifications: createUnsubscribeNotificationsTool(app, request),
-          getReferralLink: createGetReferralLinkTool(app, request),
-          getReferralStats: createGetReferralStatsTool(app, request),
-          createPaymentLink: createPaymentLinkTool(app, request),
-          sendResumePdf: createSendResumePdfTool(app, request),
-          sendMessage: createSendMessageTool(app, request),
-          sendVoiceNote: createSendVoiceNoteTool(app, request),
-        },
-        toolChoice: 'auto',
-        stopWhen: stepCountIs(15),
-      }),
-      { maxRetries: 1, label: 'main-agent', logger: app.logger },
-    );
+    const result = await generateText({
+      model: getMainAgentModel(app),
+      system: SYSTEM_PROMPT,
+      messages: buildMessages(request),
+      abortSignal,
+      tools: {
+        searchJobs: createSearchJobsTool(app, request),
+        saveResume: createSaveResumeTool(app, request),
+        transcribeAudio: createTranscribeAudioTool(app, request),
+        subscribeNotifications: createSubscribeNotificationsTool(app, request),
+        unsubscribeNotifications: createUnsubscribeNotificationsTool(app, request),
+        getReferralLink: createGetReferralLinkTool(app, request),
+        getReferralStats: createGetReferralStatsTool(app, request),
+        createPaymentLink: createPaymentLinkTool(app, request),
+        sendResumePdf: createSendResumePdfTool(app, request),
+        sendMessage: createSendMessageTool(app, request),
+        sendVoiceNote: createSendVoiceNoteTool(app, request),
+      },
+      toolChoice: 'auto',
+      stopWhen: stepCountIs(15),
+    });
 
     const sentText =
       request.sentMessages.at(-1)?.text ??

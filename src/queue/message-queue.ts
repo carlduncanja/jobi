@@ -94,8 +94,10 @@ export function getMessageQueue(redisUrl: string): Queue<MessageJobData> {
     _queue = new Queue<MessageJobData>(QUEUE_NAME, {
       connection: makeConnection(redisUrl),
       defaultJobOptions: {
-        attempts: 3,
-        backoff: { type: 'exponential', delay: 2000 },
+        // Only 1 attempt — the agent handles its own retries internally.
+        // Multiple attempts here would make a user wait 110s × N before the
+        // fallback message is sent.
+        attempts: 1,
         removeOnComplete: 500,
         removeOnFail: 200,
       },
@@ -106,7 +108,9 @@ export function getMessageQueue(redisUrl: string): Queue<MessageJobData> {
 
 // ── Worker (consumer) ─────────────────────────────────────────────────────────
 
-const MESSAGE_DEADLINE_MS = 2 * 60_000;
+// Must be longer than AGENT_TIMEOUT_MS (90s) so the agent can send its own
+// fallback first. If the agent itself hangs past this, BullMQ kills the job.
+const MESSAGE_DEADLINE_MS = 110_000; // 110 seconds
 
 export function startMessageWorker(app: AppContext): Worker<MessageJobData> {
   const redisUrl = app.env.redisUrl!;
@@ -121,14 +125,29 @@ export function startMessageWorker(app: AppContext): Worker<MessageJobData> {
         'Processing queued message',
       );
 
-      const deadline = new Promise<never>((_, reject) =>
-        setTimeout(
-          () => reject(new Error('message_deadline_exceeded')),
-          MESSAGE_DEADLINE_MS,
-        ),
-      );
+      let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+      const deadline = new Promise<never>((_, reject) => {
+        deadlineTimer = setTimeout(() => {
+          app.logger.warn(
+            { jobId: job.id, userId: message.userId, chatId: message.chatId },
+            'Message deadline exceeded — sending fallback',
+          );
+          // Send fallback immediately rather than waiting for BullMQ failed event
+          if (app.whatsappProvider) {
+            app.whatsappProvider.sendText({
+              chatId: message.chatId,
+              text: "sorry, that took too long on my end — try again!",
+            }).catch(() => {});
+          }
+          reject(new Error('message_deadline_exceeded'));
+        }, MESSAGE_DEADLINE_MS);
+      });
 
-      await Promise.race([handleMessage(app, message), deadline]);
+      try {
+        await Promise.race([handleMessage(app, message), deadline]);
+      } finally {
+        clearTimeout(deadlineTimer);
+      }
     },
     {
       connection: makeConnection(redisUrl),
