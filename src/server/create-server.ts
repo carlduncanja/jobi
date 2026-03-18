@@ -4,6 +4,7 @@ import type { AppContext } from '../lib/app-context';
 import type { WhatsAppProvider } from '../domain/ports/whatsapp-provider';
 import { processDailyDigestWindow } from '../workflows/daily-digest';
 import { handleStripeWebhook } from './stripe-webhook';
+import { startMessageWorker } from '../queue/message-queue';
 
 export interface CreateJobBotServerOptions {
   app: AppContext;
@@ -34,6 +35,14 @@ export async function createJobBotServer(
   } = options;
 
   app.whatsappProvider = whatsappProvider;
+
+  // Start BullMQ worker if Redis is configured
+  const worker = app.env.redisUrl ? startMessageWorker(app) : null;
+  if (worker) {
+    app.logger.info('BullMQ worker started — messages will be processed via Redis queue');
+  } else {
+    app.logger.info('No REDIS_URL set — using in-memory queue');
+  }
 
   const unsubscribe = whatsappProvider.subscribe((event) => {
     if (event.type === 'message') {
@@ -152,6 +161,10 @@ export async function createJobBotServer(
 
       if (scheduler) {
         clearInterval(scheduler);
+      }
+
+      if (worker) {
+        await worker.close();
       }
 
       if (startWhatsAppProvider) {

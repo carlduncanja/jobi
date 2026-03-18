@@ -33,6 +33,8 @@ const envSchema = z
     STRIPE_SECRET_KEY: z.string().optional(),
     STRIPE_WEBHOOK_SECRET: z.string().optional(),
     PUBLIC_URL: z.string().optional(),
+
+    REDIS_URL: z.string().optional(),
   });
 
 export type Env = ReturnType<typeof loadEnv>;
@@ -75,5 +77,6 @@ export function loadEnv() {
       webhookSecret: parsed.data.STRIPE_WEBHOOK_SECRET,
     },
     publicUrl: parsed.data.PUBLIC_URL ?? '',
+    redisUrl: parsed.data.REDIS_URL,
   };
 }

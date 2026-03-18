@@ -14,6 +14,7 @@
     "@exalabs/ai-sdk": "^1.0.5",
     "@whiskeysockets/baileys": "^7.0.0-rc.9",
     "ai": "^6.0.116",
+    "bullmq": "^5.71.0",
     "cheerio": "^1.2.0",
     "mammoth": "^1.11.0",
     "mime-types": "^3.0.2",
