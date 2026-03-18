@@ -154,7 +154,10 @@ export async function retryAsync<T>(
           error.message.includes('500') ||
           error.message.includes('502') ||
           error.message.includes('503') ||
-          error.message.includes('429'));
+          error.message.includes('429') ||
+          error.message.includes('Transaction conflict') ||
+          error.message.includes('transaction conflict') ||
+          error.message.includes('write conflict'));
 
       if (!isRetryable || attempt >= maxRetries) {
         throw error;

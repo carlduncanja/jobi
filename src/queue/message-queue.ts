@@ -132,7 +132,9 @@ export function startMessageWorker(app: AppContext): Worker<MessageJobData> {
     },
     {
       connection: makeConnection(redisUrl),
-      concurrency: 10,
+      // SurrealDB (surrealkv) is single-node — high concurrency causes transaction
+      // conflicts that crash the process. 8 concurrent jobs is a safe ceiling.
+      concurrency: 8,
     },
   );
 

@@ -13,8 +13,10 @@ async function enqueueViaBullMQ(
 
   // Use chatId as the job name so BullMQ can deduplicate and order per-chat.
   // jobId is unique per message; the queue preserves FIFO order per chatId.
+  // BullMQ jobIds cannot contain ":" — sanitise by replacing with "_"
+  const safeJobId = `${message.chatId}_${message.messageId}`.replace(/:/g, '_');
   await queue.add(message.chatId, serializeMessage(message), {
-    jobId: `${message.chatId}:${message.messageId}`,
+    jobId: safeJobId,
   });
 
   app.logger.info(
