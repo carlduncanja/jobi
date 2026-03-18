@@ -250,7 +250,7 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
 
       setTimeout(() => {
         void this.processUnrepliedMessages();
-      }, 15_000);
+      }, 5_000);
     }
 
     await saveSessionStatus(this.app.db, this.sessionId, this.status);
@@ -382,7 +382,10 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
     }
 
     const text = extractTextFromMessage(content);
-    const attachments = await this.extractAttachments(message, content);
+    const attachments = await this.extractAttachments(message, content).catch((err) => {
+      this.app.logger.warn({ err, messageId: message.key.id }, 'Failed to extract attachments, skipping');
+      return [] as NormalizedAttachment[];
+    });
     const rawUserId = (message.key.participant ?? message.key.remoteJid).split('@')[0];
     const userId = rawUserId || message.key.remoteJid.split('@')[0];
     const timestampSeconds = Number(message.messageTimestamp ?? Math.floor(Date.now() / 1000));
@@ -413,15 +416,21 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
       return [];
     }
 
-    const buffer = await downloadMediaMessage(
-      message,
-      'buffer',
-      {},
-      {
-        logger: this.baileysLogger,
-        reuploadRequest: this.socket.updateMediaMessage,
-      },
-    );
+    let buffer: Buffer;
+    try {
+      buffer = await downloadMediaMessage(
+        message,
+        'buffer',
+        {},
+        {
+          logger: this.baileysLogger,
+          reuploadRequest: this.socket.updateMediaMessage,
+        },
+      ) as Buffer;
+    } catch (err) {
+      this.app.logger.warn({ err, messageId: message.key.id }, 'Media download failed, skipping attachment');
+      return [];
+    }
 
     if (contentType === 'imageMessage' && content.imageMessage) {
       return [

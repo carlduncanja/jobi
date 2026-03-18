@@ -11,9 +11,7 @@ export function recordId(table: string, id: string) {
   return new RecordId(table, id);
 }
 
-export async function connectSurreal(env: Env, logger: Logger): Promise<Database> {
-  const db = new Surreal();
-
+async function doConnect(db: Surreal, env: Env): Promise<void> {
   await db.connect(env.surreal.url);
   await db.signin({
     username: env.surreal.username,
@@ -23,6 +21,33 @@ export async function connectSurreal(env: Env, logger: Logger): Promise<Database
     namespace: env.surreal.namespace,
     database: env.surreal.database,
   });
+}
+
+export async function connectSurreal(env: Env, logger: Logger): Promise<Database> {
+  const db = new Surreal();
+
+  await doConnect(db, env);
+
+  // Periodically verify the connection is still authenticated and reconnect if not
+  setInterval(async () => {
+    try {
+      await db.query('RETURN 1');
+    } catch {
+      logger.warn('SurrealDB connection lost, reconnecting...');
+      for (let attempt = 1; attempt <= 10; attempt++) {
+        await new Promise((r) => setTimeout(r, Math.min(1000 * attempt, 10_000)));
+        try {
+          await doConnect(db, env);
+          logger.info('SurrealDB reconnected');
+          return;
+        } catch (err) {
+          logger.warn({ err, attempt }, 'SurrealDB reconnect attempt failed');
+        }
+      }
+      logger.error('SurrealDB reconnect failed after 10 attempts, exiting');
+      process.exit(1);
+    }
+  }, 30_000);
 
   await mkdir(env.dataDir, { recursive: true });
   logger.info({ url: env.surreal.url }, 'Connected to SurrealDB');

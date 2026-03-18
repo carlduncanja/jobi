@@ -14,56 +14,35 @@ import { runMainAgent } from '../ai/main-agent';
 
 const REFERRAL_CODE_RE = /\bREF-([A-Z0-9]+)\b/i;
 
-function isAbortError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  if (error.name === 'AbortError') return true;
-  // AI Gateway wraps abort as GatewayResponseError with "aborted" in the message
-  if (error.message.toLowerCase().includes('aborted')) return true;
-  // Check cause chain
-  const cause = (error as any).cause;
-  if (cause instanceof Error) return isAbortError(cause);
-  return false;
-}
 
-interface ChatQueueEntry {
-  promise: Promise<void>;
-  abort: AbortController;
-}
-
-const chatQueues = new Map<string, ChatQueueEntry>();
+// Per-chat queue: each chat processes one message at a time, in order.
+// Every message is guaranteed to be processed — nothing is dropped or cancelled.
+const chatQueues = new Map<string, Promise<void>>();
 
 export function enqueueMessage(app: AppContext, message: NormalizedIncomingMessage): void {
   const chatId = message.chatId;
-  const existing = chatQueues.get(chatId);
+  const tail = chatQueues.get(chatId) ?? Promise.resolve();
 
-  if (existing) {
-    existing.abort.abort();
-    app.logger.info({ chatId, userId: message.userId }, 'Cancelled previous in-progress message for chat');
-  }
-
-  const controller = new AbortController();
-
-  const promise = handleIncomingWhatsAppMessage(app, message, controller.signal)
-    .catch((error) => {
-      if (isAbortError(error)) return;
+  const next = tail
+    .then(() => handleIncomingWhatsAppMessage(app, message))
+    .catch((err) => {
       app.logger.error(
-        { err: error, chatId: message.chatId, userId: message.userId },
+        { err, chatId: message.chatId, userId: message.userId },
         'Failed to handle incoming WhatsApp message',
       );
     })
     .finally(() => {
-      if (chatQueues.get(chatId)?.promise === promise) {
+      if (chatQueues.get(chatId) === next) {
         chatQueues.delete(chatId);
       }
     });
 
-  chatQueues.set(chatId, { promise, abort: controller });
+  chatQueues.set(chatId, next);
 }
 
 async function handleIncomingWhatsAppMessage(
   app: AppContext,
   message: NormalizedIncomingMessage,
-  abortSignal: AbortSignal,
 ): Promise<void> {
   app.logger.info(
     { userId: message.userId, chatId: message.chatId, text: message.text, attachments: message.attachments.length },
@@ -134,7 +113,6 @@ async function handleIncomingWhatsAppMessage(
     allowSending: true,
     sentMessages: [],
     history,
-    abortSignal,
   });
 }
 
