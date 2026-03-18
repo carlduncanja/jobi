@@ -7,6 +7,7 @@ import { createGetReferralStatsTool } from '../tools/get-referral-stats';
 import { createSaveResumeTool } from '../tools/save-resume';
 import { createSearchJobsTool } from '../tools/search-jobs';
 import { createSendMessageTool } from '../tools/send-message';
+import { createSendVoiceNoteTool } from '../tools/send-voice-note';
 import { createSubscribeNotificationsTool } from '../tools/subscribe-notifications';
 import { createTranscribeAudioTool } from '../tools/transcribe-audio';
 import { createUnsubscribeNotificationsTool } from '../tools/unsubscribe-notifications';
@@ -34,7 +35,8 @@ TOOLS:
 - unsubscribeNotifications: turn off daily alerts
 - getReferralLink: get the user's referral link
 - getReferralStats: get referral count, rank, leaderboard
-- sendMessage: the ONLY way to talk to the user — call it as many times as needed
+- sendMessage: send a text message — the main way to talk to the user
+- sendVoiceNote: send a voice note. Use when the user sends a voice note (reply in kind) or asks for audio.
 
 BEFORE SEARCHING:
 - Location ambiguous (e.g. "Kingston")? Ask which one before searching.
@@ -60,7 +62,7 @@ Resume:
 
 Voice note:
 1. transcribeAudio(...)
-2. Respond to what they said normally
+2. sendVoiceNote(...) with a short spoken reply — match their energy, reply in audio since they did
 
 Referral link:
 1. getReferralLink()
@@ -118,6 +120,7 @@ export async function runMainAgent(
           getReferralLink: createGetReferralLinkTool(app, request),
           getReferralStats: createGetReferralStatsTool(app, request),
           sendMessage: createSendMessageTool(app, request),
+          sendVoiceNote: createSendVoiceNoteTool(app, request),
         },
         toolChoice: 'auto',
         stopWhen: stepCountIs(12),

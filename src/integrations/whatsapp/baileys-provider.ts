@@ -25,6 +25,7 @@ import type { AppContext } from '../../lib/app-context';
 import type {
   NormalizedAttachment,
   NormalizedIncomingMessage,
+  OutboundAudioMessage,
   OutboundTextMessage,
   SendMessageResult,
   WhatsAppProviderEvent,
@@ -86,6 +87,23 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
         ? { quoted: { key: { remoteJid: message.chatId, id: message.quotedMessageId }, message: {} } as any }
         : undefined,
     );
+
+    return {
+      delivered: true,
+      providerMessageId: sent?.key?.id ?? undefined,
+    };
+  }
+
+  async sendAudio(message: OutboundAudioMessage): Promise<SendMessageResult> {
+    if (!this.socket) {
+      throw new Error('WhatsApp socket is not connected');
+    }
+
+    const sent = await this.socket.sendMessage(message.chatId, {
+      audio: Buffer.from(message.audioBytes),
+      mimetype: message.mimeType,
+      ptt: true,
+    });
 
     return {
       delivered: true,

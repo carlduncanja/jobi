@@ -45,6 +45,12 @@ export interface OutboundTextMessage {
   quotedMessageId?: string;
 }
 
+export interface OutboundAudioMessage {
+  chatId: string;
+  audioBytes: Uint8Array;
+  mimeType: string;
+}
+
 export interface ResumeDocumentRecord {
   id: string;
   userId: string;
