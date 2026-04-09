@@ -76,12 +76,25 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
     };
   }
 
-  async sendText(message: OutboundTextMessage): Promise<SendMessageResult> {
-    if (!this.socket) {
-      throw new Error('WhatsApp socket is not connected');
+  /**
+   * Wait up to `timeoutMs` for the socket to be available (handles brief
+   * reconnect windows where socket is null for a few seconds).
+   */
+  private async waitForSocket(timeoutMs = 15_000): Promise<WASocket> {
+    const start = Date.now();
+    while (!this.socket) {
+      if (Date.now() - start > timeoutMs) {
+        throw new Error('WhatsApp socket is not connected');
+      }
+      await new Promise((r) => setTimeout(r, 500));
     }
+    return this.socket;
+  }
 
-    const sent = await this.socket.sendMessage(
+  async sendText(message: OutboundTextMessage): Promise<SendMessageResult> {
+    const socket = await this.waitForSocket();
+
+    const sent = await socket.sendMessage(
       message.chatId,
       { text: message.text },
       message.quotedMessageId
@@ -96,11 +109,9 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
   }
 
   async sendAudio(message: OutboundAudioMessage): Promise<SendMessageResult> {
-    if (!this.socket) {
-      throw new Error('WhatsApp socket is not connected');
-    }
+    const socket = await this.waitForSocket();
 
-    const sent = await this.socket.sendMessage(message.chatId, {
+    const sent = await socket.sendMessage(message.chatId, {
       audio: Buffer.from(message.audioBytes),
       mimetype: message.mimeType,
       ptt: true,
@@ -113,11 +124,9 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
   }
 
   async sendDocument(message: OutboundDocumentMessage): Promise<SendMessageResult> {
-    if (!this.socket) {
-      throw new Error('WhatsApp socket is not connected');
-    }
+    const socket = await this.waitForSocket();
 
-    const sent = await this.socket.sendMessage(message.chatId, {
+    const sent = await socket.sendMessage(message.chatId, {
       document: Buffer.from(message.documentBytes),
       mimetype: message.mimeType,
       fileName: message.filename,
